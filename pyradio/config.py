@@ -32,6 +32,7 @@ class PyRadioStations(object):
 
     """ this is always on users config dir """
     stations_dir = ''
+    registers_dir = ''
 
     """ True if playlist not in config dir """
     foreign_file = False
@@ -74,21 +75,26 @@ class PyRadioStations(object):
     # station directory service object
     _online_browser = None
 
+    _is_register = False
+
     def __init__(self, stationFile=''):
         if platform.startswith('win'):
             self._open_string_id = 1
 
         if sys.platform.startswith('win'):
             self.stations_dir = path.join(getenv('APPDATA'), 'pyradio')
+            self.registers_dir = path.join(self.stations_dir, '_registers')
         else:
             self.stations_dir = path.join(getenv('HOME', '~'), '.config', 'pyradio')
-        """ Make sure config dir exists """
-        if not path.exists(self.stations_dir):
-            try:
-                makedirs(self.stations_dir)
-            except:
-                print('Error: Cannot create config directory: "{}"'.format(self.stations_dir))
-                sys.exit(1)
+            self.registers_dir = path.join(self.stations_dir, '.registers')
+        """ Make sure config dirs exists """
+        for a_dir in (self.stations_dir, self.registers_dir):
+            if not path.exists(a_dir):
+                try:
+                    makedirs(a_dir)
+                except:
+                    print('Error: Cannot create config directory: "{}"'.format(a_dir))
+                    sys.exit(1)
         self.root_path = path.join(path.dirname(__file__), 'stations.csv')
 
         if path.exists(path.join(self.stations_dir, '.lock')):
@@ -112,6 +118,14 @@ class PyRadioStations(object):
 
             self._move_old_csv(self.stations_dir)
             self._check_stations_csv(self.stations_dir, self.root_path)
+
+    @property
+    def is_register(self):
+        return sefl._is_register
+
+    @is_register.setter
+    def is_register(self, value):
+        raise ValueError('property is read only')
 
     @property
     def internal_header_height(self):
