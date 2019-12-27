@@ -322,7 +322,10 @@ class PyRadio(object):
         self.log = Log()
         # For the time being, supported players are mpv, mplayer and vlc.
         try:
-            self.player = player.probePlayer(requested_player=self.requested_player)(self.log, self._cnf.connection_timeout, self.connectionFailed)
+            self.player = player.probePlayer(requested_player=self.requested_player)(self.log,
+                    self._cnf.connection_timeout,
+                    self.playbackTimeoutCounter,
+                    self.connectionFailed)
         except:
             # no player
             self.ws.operation_mode = self.ws.NO_PLAYER_ERROR_MODE
@@ -782,7 +785,7 @@ class PyRadio(object):
             #### self._cnf.browsing_station_service = True
             # Add a history item to preserve browsing_station_service
             # Need to add TITLE, if service found
-            self._cnf.add_to_playlist_history(self.stations[self.selection][0], 
+            self._cnf.add_to_playlist_history(self.stations[self.selection][0],
                     '', '', browsing_station_service=True)
             self._check_to_open_playlist()
 
@@ -811,6 +814,33 @@ class PyRadio(object):
             except OSError:
                 self.log.write('Error starting player.'
                                'Are you sure a supported player is installed?')
+
+    def playbackTimeoutCounter(self, *args):
+        lock = args[0]
+        timeout = args[1]
+        station_name = args[2]
+        stop = args[3]
+        if stop():
+            return
+        not_showed = True
+        for n in range(timeout, -1, -1):
+            # 8 * .12 =~ 1 sec
+            for k in range(0, 8):
+                sleep(.12)
+                if stop():
+                    return
+            #if n <= int((7 * timeout) / 10):
+            if n <= 7:
+                if stop():
+                    return
+                self.log.write('Connecting to: "{0}" ... ({1})'.format(station_name, n), lock)
+            else:
+                if stop():
+                    return
+                if not_showed:
+                    self.log.write('Connecting to: "{}"'.format(station_name), lock)
+                    not_showed = False
+        self.connectionFailed()
 
     def connectionFailed(self):
         old_playing = self.playing
@@ -2398,7 +2428,7 @@ class PyRadio(object):
             #    logger.error('DE cur {}'.format(n))
             #logger.error('DE \n\nselection = {0}, startPos = {1}, playing = {2}\n\n'.format(self.selection, self.startPos, self.playing))
             self.stations = self._cnf.stations
-            self._align_stations_and_refresh(self.ws.PLAYLIST_MODE, 
+            self._align_stations_and_refresh(self.ws.PLAYLIST_MODE,
                     a_startPos=self.startPos,
                     a_selection=self.selection)
             if self.playing < 0:
