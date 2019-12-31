@@ -60,9 +60,10 @@ class PyRadio(object):
     number_of_items = 0
 
     playing = -1
-    jumpnr = ""
-    _backslash = False
-    _reg_y_pressed = False
+    jumpnr = ''
+    _backslash_pressed = False
+    _register_assign_pressed = False
+    _register_open_pressed = False
     """ Help window
         also used for displaying messages,
         asking for confirmation etc. """
@@ -135,6 +136,8 @@ class PyRadio(object):
     _help_metrics = {}
 
     _playlist_error_message = ''
+
+    _status_suffix = ''
 
     _register_minus = None
 
@@ -604,15 +607,15 @@ class PyRadio(object):
     def run(self):
         if self.ws.operation_mode == self.ws.NO_PLAYER_ERROR_MODE:
             if platform.startswith('win'):
-                self.log.write('mplayer not found. Press any key to exit....')
+                self.log.write(msg='mplayer not found. Press any key to exit....')
             else:
                 if self.requested_player:
                     if ',' in self.requested_player:
-                        self.log.write('None of "{}" players is available. Press any key to exit....'.format(self.requested_player))
+                        self.log.write(msg='None of "{}" players is available. Press any key to exit....'.format(self.requested_player))
                     else:
-                        self.log.write('Player "{}" not available. Press any key to exit....'.format(self.requested_player))
+                        self.log.write(msg='Player "{}" not available. Press any key to exit....'.format(self.requested_player))
                 else:
-                    self.log.write("No player available. Press any key to exit....")
+                    self.log.write(msg="No player available. Press any key to exit....")
             try:
                 self.bodyWin.getch()
             except KeyboardInterrupt:
@@ -632,8 +635,7 @@ class PyRadio(object):
                     self._update_notification_thread.start()
 
             #signal.signal(signal.SIGINT, self.ctrl_c_handler)
-            self.log.write('Selected player: {}'.format(self._format_player_string()), help_msg=True)
-            #self.log.write_right('Press ? for help')
+            self.log.write(msg='Selected player: {}'.format(self._format_player_string()), help_msg=True)
             if self.play != 'False':
                 if self.play is None:
                     num = random.randint(0, len(self.stations))
@@ -799,7 +801,7 @@ class PyRadio(object):
             if self._cnf.browsing_station_service:
                 if self._cnf.online_browser.have_to_retrieve_url:
                     self.log.display_help_message = False
-                    self.log.write('Station: "' + self._last_played_station + '" - Retrieving URL...')
+                    self.log.write(msg='Station: "' + self._last_played_station + '" - Retrieving URL...')
                     stream_url = self._cnf.online_browser.url(self.selection)
             if not stream_url:
                 stream_url = self.stations[self.selection][1]
@@ -808,11 +810,11 @@ class PyRadio(object):
             except:
                 enc = ''
             self.log.display_help_message = False
-            self.log.write('Playing ' + self._last_played_station)
+            self.log.write(msg='Playing ' + self._last_played_station)
             try:
                 self.player.play(self._last_played_station, stream_url, self.get_active_encoding(enc))
             except OSError:
-                self.log.write('Error starting player.'
+                self.log.write(msg='Error starting player.'
                                'Are you sure a supported player is installed?')
 
     def playbackTimeoutCounter(self, *args):
@@ -833,12 +835,12 @@ class PyRadio(object):
             if n <= 7:
                 if stop():
                     return
-                self.log.write('Connecting to: "{0}" ... ({1})'.format(station_name, n), lock)
+                self.log.write(msg='Connecting to: "{0}" ... ({1})'.format(station_name, n), thread_lock=lock)
             else:
                 if stop():
                     return
                 if not_showed:
-                    self.log.write('Connecting to: "{}"'.format(station_name), lock)
+                    self.log.write(msg='Connecting to: "{}"'.format(station_name), thread_lock=lock)
                     not_showed = False
         self.connectionFailed()
 
@@ -857,7 +859,7 @@ class PyRadio(object):
         if logger.isEnabledFor(logging.INFO):
             logger.info('start of playback NOT detected!!!')
         self.player.stop_mpv_status_update_thread = True
-        self.log.write('Failed to connect to: "{}"'.format(self._last_played_station))
+        self.log.write(msg='Failed to connect to: "{}"'.format(self._last_played_station))
         if self._random_requested and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             if logger.isEnabledFor(logging.INFO):
@@ -873,9 +875,10 @@ class PyRadio(object):
         finally:
             self.playing = -1
             if show_message:
-                self.log.write('{}: Playback stopped'.format(self._format_player_string()), thread_lock=None, help_msg=True)
-                #self.log.write_right('Press ? for help')
-            #self.log.write('Playback stopped')
+                self._show_player_is_stopped()
+
+    def _show_player_is_stopped(self):
+        self.log.write(msg='{}: Playback stopped'.format(self._format_player_string()), thread_lock=None, help_msg=True, suffix=self._status_suffix)
 
     def removeStation(self):
         if self._cnf.confirm_station_deletion:
@@ -921,9 +924,7 @@ class PyRadio(object):
         self._set_active_stations()
         #txt = '''Reloading playlist. Please wait...'''
         #self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
+        self._update_status_bar_right()
         ret = self._cnf.read_playlist_file(self._cnf.station_path)
         if ret == -1:
             self.stations = self._cnf.playlists
@@ -971,10 +972,7 @@ class PyRadio(object):
         self._show_theme_selector(changed_from_config=True)
 
     def _show_theme_selector(self, changed_from_config=False):
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
+        self._update_status_bar_right()
         self._theme_selector = None
         #if logger.isEnabledFor(logging.ERROR):
         #    logger.error('DE\n\nself._theme = {0}\nself._theme_name = {1}\nself._cnf.theme = {2}\n\n'.format(self._theme, self._theme_name, self._cnf.theme))
@@ -1924,10 +1922,7 @@ class PyRadio(object):
         """ open playlist """
         self._cnf.save_station_position(self.startPos, self.selection, self.playing)
         self._set_active_stations()
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
+        self._update_status_bar_right()
         if self._cnf.browsing_station_service:
             # TODO
             if HAS_REQUESTS:
@@ -2461,6 +2456,19 @@ class PyRadio(object):
             logger.error('DE *** refreshing body from normal resize')
             self.refreshBody()
 
+    def _update_status_bar_right(self, jumpnr='',
+            status_suffix='', backslash=False,
+            reg_y_pressed=False, reg_open_pressed=False,
+            random_requested=False):
+        self._random_requested = random_requested
+        self.jumpnr = jumpnr
+        self._status_suffix = status_suffix
+        self._backslash_pressed = backslash
+        self._register_assign_pressed = reg_y_pressed
+        self._register_open_pressed = reg_open_pressed
+        a_lock = self.player.status_update_lock if self.player else None
+        self.log.write(suffix=self._status_suffix, thread_lock=a_lock)
+
     def keypress(self, char):
         if self.ws.operation_mode in self._no_keyboard:
             if logger.isEnabledFor(logging.DEBUG):
@@ -2475,29 +2483,57 @@ class PyRadio(object):
 
         ##############################################################################
         #
-        # Register - char = y
+        # Add to Register - char = y
         #
-        elif not self._reg_y_pressed and char == ord('y') and \
+        elif not self._register_assign_pressed and char == ord('y') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             # y pressed
-            self._reg_y_pressed = True
+            self._update_status_bar_right(reg_y_pressed=True, status_suffix='y')
             return
-        elif self._reg_y_pressed and (chr(char).isalpha() \
-                or chr(char).isdigit() or char == ord('-')) and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
+        elif (self._register_assign_pressed and char < 127 \
+                and (chr(char).isalpha() \
+                or chr(char).isdigit() \
+                or char in (ord('\n'), ord('\r'), curses.KEY_ENTER)) \
+                and self.ws.operation_mode == self.ws.NORMAL_MODE):
             # get station to register
             # accept a-z, 0-9 and -
+            self._update_status_bar_right()
             ch = chr(char).lower()
-            self._register_minus = self.stations[self.selection]
             if ch == '-':
+                self._register_minus = self.stations[self.selection]
                 logger.error('DE saving to unnamed register: {}'.format(self._register_minus))
             else:
                 # TODO Save to register file
+                self._register_minus = self.stations[self.selection]
                 logger.error('DE saving to register: {0} - {1}'.format(ch, self._register_minus))
-            self._reg_y_pressed = False
             return
         #
-        # End of Register - char = y
+        # End of Add to Register - char = y
+        #
+        ##############################################################################
+
+        ##############################################################################
+        #
+        # OpenRegister - char = '
+        #
+        elif not self._register_open_pressed and char == ord('\'') and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            # y pressed
+            self._update_status_bar_right(reg_open_pressed=True, status_suffix='\'')
+            return
+        elif (self._register_open_pressed and char < 127 \
+                and (chr(char).isalpha() \
+                or chr(char).isdigit()) \
+                and self.ws.operation_mode == self.ws.NORMAL_MODE):
+            # get station to register
+            # accept a-z, 0-9 and -
+            self._update_status_bar_right()
+            ch = chr(char).lower()
+            #self._register_minus = self.stations[self.selection]
+            logger.error('DE opening register: {0}'.format(ch))
+            return
+        #
+        # End of pen Register - char = y
         #
         ##############################################################################
 
@@ -2505,15 +2541,15 @@ class PyRadio(object):
         #
         # Playlist history - char = \
         #
-        elif not self._backslash and char == ord('\\') and \
+        elif not self._backslash_pressed and char == ord('\\') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             # \ pressed
-            self._backslash = True
+            self._update_status_bar_right(backslash=True, status_suffix='\\')
             return
-        elif self._backslash and char == ord('\\') and \
+        elif self._backslash_pressed and char == ord('\\') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             # \\ pressed
-            self._backslash = False
+            self._update_status_bar_right()
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('opening previous playlist')
@@ -2522,10 +2558,10 @@ class PyRadio(object):
             else:
                 self._show_no_more_playlist_history()
             return
-        elif self._backslash and char == ord(']') and \
+        elif self._backslash_pressed and char == ord(']') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
-            self._backslash = False
-            self._reg_y_pressed = False
+            self._backslash_pressed = False
+            self._register_assign_pressed = False
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('opening first playlist')
@@ -2550,10 +2586,7 @@ class PyRadio(object):
 
         elif char == ord('H') and self.ws.operation_mode in \
                 (self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             if self.number_of_items > 0:
                 self.selection = self.startPos
                 self.refreshBody()
@@ -2561,10 +2594,7 @@ class PyRadio(object):
 
         elif char == ord('M') and self.ws.operation_mode in \
                 (self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             if self.number_of_items > 0:
                 if self.number_of_items < self.bodyMaxY:
                     self.selection = int(self.number_of_items / 2)
@@ -2575,10 +2605,7 @@ class PyRadio(object):
 
         elif char == ord('L') and self.ws.operation_mode in \
                 (self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             if self.number_of_items > 0:
                 if self.number_of_items < self.bodyMaxY:
                     self.setStation(-1)
@@ -2592,10 +2619,7 @@ class PyRadio(object):
                     self.ws.ADD_STATION_MODE, self.ws.THEME_MODE) and \
                 self.ws.operation_mode not in self.ws.PASSIVE_WINDOWS and \
                 not self.is_search_mode(self.ws.operation_mode):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             self._config_win = None
             self.theme_forced_selection = None
             if self.ws.operation_mode == self.ws.NORMAL_MODE:
@@ -2608,10 +2632,7 @@ class PyRadio(object):
 
         elif char == ord('P') and self.ws.operation_mode in \
                 (self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             self._goto_playing_station()
             return
 
@@ -2697,22 +2718,22 @@ class PyRadio(object):
                                 self.stopPlayer()
                                 self.refreshBody()
                             self.log.display_help_message = False
-                            self.log.write(msg[0], thread_lock=None, help_msg=False)
+                            self.log.write(msg=msg[0], thread_lock=None, help_msg=False, suffix=self._status_suffix)
                             self._print_config_save_error()
                         elif ret == 0:
                             # Config saved successfully
                             if self.player.isPlaying():
                                 if self._cnf.opts['default_encoding'][1] == self._old_config_encoding:
-                                    self.log.write(msg[1])
+                                    self.log.write(msg=msg[1])
                                     self.player.threadUpdateTitle(self.player.status_update_lock)
                                 else:
-                                    self.log.write(msg[2])
+                                    self.log.write(msg=msg[2])
                                     self.player.threadUpdateTitle(self.player.status_update_lock)
                                     sleep(1.5)
                                     self.playSelection()
                             else:
 
-                                self.log.write(msg[1], thread_lock=None, help_msg=True)
+                                self.log.write(msg=msg[1], thread_lock=None, help_msg=True, suffix=self._status_suffix)
                             self._old_config_encoding = self._cnf.opts['default_encoding'][1]
                             if self._config_win:
                                 self._config_win._old_use_transparency = self._cnf.use_transparency
@@ -2985,10 +3006,7 @@ class PyRadio(object):
                 return
 
         elif char in (ord('/'), ) and self.ws.operation_mode in self._search_modes.keys():
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             self._give_me_a_search_class(self.ws.operation_mode)
             self.search.show(self.outerBodyWin)
             self.ws.operation_mode = self._search_modes[self.ws.operation_mode]
@@ -2999,10 +3017,7 @@ class PyRadio(object):
             #logger.error('DE n operation_mode = {}'.format(self.ws.operation_mode))
             self._give_me_a_search_class(self.ws.operation_mode)
             if self.ws.operation_mode == self.ws.NORMAL_MODE:
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
             """ search forward """
             if self.ws.operation_mode in \
                     ( self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE ):
@@ -3032,10 +3047,7 @@ class PyRadio(object):
                 self.ws.operation_mode in self._search_modes.keys():
             self._give_me_a_search_class(self.ws.operation_mode)
             if self.ws.operation_mode == self.ws.NORMAL_MODE:
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
             """ search backwards """
             if self.ws.operation_mode in \
                     ( self.ws.NORMAL_MODE, self.ws.PLAYLIST_MODE ):
@@ -3098,26 +3110,27 @@ class PyRadio(object):
                 return
 
         elif char in (ord('T'), ):
-            self.jumpnr = ''
-            self._backslash = False
-            self._reg_y_pressed = False
-            self._random_requested = False
+            self._update_status_bar_right()
             self._toggle_transparency()
             return
 
         elif char in (ord('+'), ord('='), ord('.')):
+            self._update_status_bar_right()
             self._volume_up()
             return
 
         elif char in (ord('-'), ord(',')):
+            self._update_status_bar_right()
             self._volume_down()
             return
 
         elif char in (ord('m'), ):
+            self._update_status_bar_right()
             self._volume_mute()
             return
 
         elif char in (ord('v'), ):
+            self._update_status_bar_right()
             self._volume_save()
             return
 
@@ -3309,18 +3322,12 @@ class PyRadio(object):
         else:
 
             if char in (ord('?'), ):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 self._print_help()
                 return
 
             if char in (curses.KEY_END, ):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 if self.number_of_items > 0:
                     self.setStation(-1)
                     self.refreshBody()
@@ -3340,25 +3347,22 @@ class PyRadio(object):
                             force_center = True
                         self.setStation(jumpto)
                         self._put_selection_in_the_middle(force=force_center)
-                    self.jumpnr = ""
                     self.refreshBody()
+                self._update_status_bar_right()
                 return
 
             if char in map(ord,map(str,range(0,10))):
                 self._random_requested = False
                 if self.number_of_items > 0:
                     self.jumpnr += chr(char)
+                    self._update_status_bar_right(jumpnr=self.jumpnr, status_suffix=self.jumpnr)
                     return
             else:
                 if char not in (curses.ascii.EOT, curses.ascii.NAK, 4, 21):
-                    self._random_requested = False
-                    self.jumpnr = ""
+                    self._update_status_bar_right()
 
             if char in (ord('g'), curses.KEY_HOME):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 self.setStation(0)
                 self.refreshBody()
                 return
@@ -3371,15 +3375,9 @@ class PyRadio(object):
                 self.bodyWin.nodelay(False)
                 if char == -1:
                     """ ESCAPE """
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self.ws.operation_mode == self.ws.PLAYLIST_MODE:
                         """ return to stations view """
-                        self.jumpnr = ''
-                        self._backslash = False
-                        self._reg_y_pressed = False
                         self.selections[self.ws.operation_mode] = [self.selection, self.startPos, self.playing, self._cnf.playlists]
                         self.ws.close_window()
                         self._give_me_a_search_class(self.ws.operation_mode)
@@ -3413,30 +3411,21 @@ class PyRadio(object):
                     return
 
             if char in (curses.KEY_DOWN, ord('j')):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 if self.number_of_items > 0:
                     self.setStation(self.selection + 1)
                     self.refreshBody()
                 return
 
             if char in (curses.KEY_UP, ord('k')):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 if self.number_of_items > 0:
                     self.setStation(self.selection - 1)
                     self.refreshBody()
                 return
 
             if char in (curses.KEY_PPAGE, ):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 if self.number_of_items > 0:
                     sel = self.selection - self.pageChange
                     if sel < 0 and self.selection > 0:
@@ -3446,10 +3435,7 @@ class PyRadio(object):
                 return
 
             if char in (curses.KEY_NPAGE, ):
-                self.jumpnr = ''
-                self._backslash = False
-                self._reg_y_pressed = False
-                self._random_requested = False
+                self._update_status_bar_right()
                 if self.number_of_items > 0:
                     sel = self.selection + self.pageChange
                     if self.selection == len(self.stations) - 1:
@@ -3462,10 +3448,7 @@ class PyRadio(object):
 
             if self.ws.operation_mode == self.ws.NORMAL_MODE:
                 if char in ( ord('a'), ord('A') ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service: return
                     self._station_editor = PyRadioEditor(self.stations, self.selection, self.outerBodyWin)
                     if char == ord('A'):
@@ -3475,10 +3458,7 @@ class PyRadio(object):
                     self.ws.operation_mode = self.ws.ADD_STATION_MODE
 
                 elif char == ord('e'):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service: return
                     if python_version[0] == '2':
                         if not is_ascii(self.stations[self.selection][0]):
@@ -3489,10 +3469,7 @@ class PyRadio(object):
                     self.ws.operation_mode = self.ws.EDIT_STATION_MODE
 
                 elif char == ord('c'):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.locked:
                         self._print_session_locked()
                         return
@@ -3501,15 +3478,12 @@ class PyRadio(object):
                     #self.ws.operation_mode = self.ws.window_mode = self.ws.CONFIG_MODE
                     self.ws.window_mode = self.ws.CONFIG_MODE
                     if not self.player.isPlaying():
-                        self.log.write('Selected player: {}'.format(self._format_player_string()), help_msg=True)
+                        self.log.write(msg='Selected player: {}'.format(self._format_player_string()), help_msg=True)
                     self._show_config_window()
                     return
 
                 elif char in (ord('E'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     self._old_station_encoding = self.stations[self.selection][2]
                     if self._old_station_encoding == '':
                         self._old_station_encoding = 'utf-8'
@@ -3523,10 +3497,7 @@ class PyRadio(object):
                     self._encoding_select_win.setEncoding(self._old_station_encoding)
 
                 elif char in (ord('o'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service:
                         return
                     self._check_to_open_playlist()
@@ -3534,10 +3505,7 @@ class PyRadio(object):
 
                 elif char in (curses.KEY_ENTER, ord('\n'), ord('\r'),
                         curses.KEY_RIGHT, ord('l')):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self.number_of_items > 0:
                         self.playSelection()
                         self.refreshBody()
@@ -3545,13 +3513,10 @@ class PyRadio(object):
                     return
 
                 elif char in (ord(' '), curses.KEY_LEFT, ord('h')):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self.number_of_items > 0:
                         if self.player.isPlaying():
-                            self.stopPlayer()
+                            self.stopPlayer(show_message=True)
                         else:
                             self.playSelection()
                         self.refreshBody()
@@ -3560,20 +3525,14 @@ class PyRadio(object):
 
                 elif char in(ord('x'), curses.KEY_DC):
                     # TODO: make it impossible when session locked?
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service: return
                     if self.number_of_items > 0:
                         self.removeStation()
                     return
 
                 elif char in(ord('s'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service: return
                     if self.number_of_items > 0 and \
                             self._cnf.dirty_playlist:
@@ -3581,19 +3540,13 @@ class PyRadio(object):
                     return
 
                 elif char in (ord('r'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = True
+                    self._update_status_bar_right(random_requested = True)
                     # Pick a random radio station
                     self.play_random()
                     return
 
                 elif char in (ord('R'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     if self._cnf.browsing_station_service: return
                     # Reload current playlist
                     if self._cnf.dirty_playlist:
@@ -3617,20 +3570,14 @@ class PyRadio(object):
 
                 elif char in (curses.ascii.NAK, 21):
                     # ^U, move station Up
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     self._move_station(-1)
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
                     return
 
                 elif char in (curses.ascii.EOT, 4):
                     # ^D, move station Down
-                    self._random_requested = False
+                    self._update_status_bar_right()
                     self._move_station(1)
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
                     return
 
             elif self.ws.operation_mode == self.ws.PLAYLIST_MODE:
@@ -3638,9 +3585,7 @@ class PyRadio(object):
 
                 if char in (curses.KEY_ENTER, ord('\n'), ord('\r'),
                         curses.KEY_RIGHT, ord('l')):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
+                    self._update_status_bar_right()
                     """ return to stations view """
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug('Loading playlist: "{}"'.format(self.stations[self.selection][-1]))
@@ -3674,9 +3619,7 @@ class PyRadio(object):
                     return
 
                 elif char in (ord('r'), ):
-                    self.jumpnr = ''
-                    self._backslash = False
-                    self._reg_y_pressed = False
+                    self._update_status_bar_right()
                     """ read playlists from disk """
                     txt = '''Reading playlists. Please wait...'''
                     self._show_help(txt, self.ws.PLAYLIST_MODE, caption=' ', prompt=' ', is_message=True)
@@ -3692,10 +3635,6 @@ class PyRadio(object):
                         self.refreshBody()
 
     def _volume_up(self):
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
         if self.player.isPlaying():
             if self.player.playback_is_on:
                 self.player.volumeUp()
@@ -3708,10 +3647,6 @@ class PyRadio(object):
 
 
     def _volume_down(self):
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
         if self.player.isPlaying():
             if self.player.playback_is_on:
                 self.player.volumeDown()
@@ -3723,10 +3658,6 @@ class PyRadio(object):
                 logger.info('Volume adjustment inhibited because playback is off')
 
     def _volume_mute(self):
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
         if self.player.isPlaying():
             if self.player.playback_is_on:
                 self.player.toggleMute()
@@ -3738,15 +3669,11 @@ class PyRadio(object):
                 logger.info('Muting inhibited because playback is off')
 
     def _volume_save(self):
-        self.jumpnr = ''
-        self._backslash = False
-        self._reg_y_pressed = False
-        self._random_requested = False
         if self.player.isPlaying():
             if self.player.playback_is_on:
                 ret_string = self.player.save_volume()
                 if ret_string:
-                    self.log.write(ret_string)
+                    self.log.write(msg=ret_string)
                     self.player.threadUpdateTitle(self.player.status_update_lock)
         else:
             if self.ws.operation_mode in self.ws.PASSIVE_WINDOWS:

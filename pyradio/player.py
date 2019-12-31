@@ -204,7 +204,7 @@ class Player(object):
             logger.debug("updateStatus thread started.")
         #with lock:
         #    self.oldUserInput['Title'] = 'Connecting to: "{}"'.format(self.name)
-        #    self.outputStream.write(self.oldUserInput['Title'])
+        #    self.outputStream.write(msg=self.oldUserInput['Title'])
         try:
             out = self.process.stdout
             while(True):
@@ -240,7 +240,7 @@ class Player(object):
                                 string_to_show = self._format_volume_string(subsystemOut) + self._format_title_string(self.oldUserInput['Title'])
 
                                 if self.show_volume and self.oldUserInput['Title']:
-                                    self.outputStream.write(string_to_show, lock)
+                                    self.outputStream.write(msg=string_to_show, thread_lock=lock)
                                     self.threadUpdateTitle(lock)
                     elif self._is_in_playback_token(subsystemOut):
                         self.stop_timeout_counter_thread = True
@@ -253,14 +253,14 @@ class Player(object):
                         #if self.outputStream.last_written_string.startswith('Connecting to'):
                         if self.oldUserInput['Title'] == '':
                             new_input = self.outputStream.last_written_string.replace('Connecting to', 'Playing').split(' ... ')[0]
-                            #self.outputStream.write(new_input, lock)
+                            #self.outputStream.write(msg=new_input, thread_lock=lock)
                             #if self.oldUserInput['Title'] == '':
                             #    self.oldUserInput['Input'] = new_input
                             #else:
                             #    self.oldUserInput['Title'] = new_input
                         else:
                             new_input = self.oldUserInput['Title']
-                        self.outputStream.write(new_input, lock)
+                        self.outputStream.write(msg=new_input, thread_lock=lock)
                         self.playback_is_on = True
                     elif self._is_icy_entry(subsystemOut):
                         #logger.error("***** icy_entry")
@@ -276,7 +276,7 @@ class Player(object):
                                     ok_to_display = True
                             if ok_to_display and self.playback_is_on:
                                 string_to_show = self.title_prefix + title
-                                self.outputStream.write(string_to_show, lock)
+                                self.outputStream.write(msg=string_to_show, thread_lock=lock)
                         else:
                             if (logger.isEnabledFor(logging.INFO)):
                                 logger.info('Icy-Title is NOT valid')
@@ -284,11 +284,11 @@ class Player(object):
                                 title = 'Playing: "{}"'.format(self.name)
                                 self.oldUserInput['Title'] = title
                                 string_to_show = self.title_prefix + title
-                                self.outputStream.write(string_to_show, lock)
+                                self.outputStream.write(msg=string_to_show, thread_lock=lock)
                     #else:
                     #    if self.oldUserInput['Title'] == '':
                     #        self.oldUserInput['Title'] = 'Connecting to: "{}"'.format(self.name)
-                    #        self.outputStream.write(self.oldUserInput['Title'])
+                    #        self.outputStream.write(msg=self.oldUserInput['Title'])
         except:
             has_error = True
             if logger.isEnabledFor(logging.ERROR):
@@ -317,7 +317,7 @@ class Player(object):
         #if (logger.isEnabledFor(logging.INFO)):
         #    logger.info("MPV updateStatus thread connected to socket.")
         #self.oldUserInput['Title'] = 'Connecting to: "{}"'.format(self.name)
-        #self.outputStream.write(self.oldUserInput['Title'], lock)
+        #self.outputStream.write(msg=self.oldUserInput['Title'], thread_lock=lock)
         # Send data
         message = b'{ "command": ["observe_property", 1, "filtered_metadata"] }\n'
         try:
@@ -355,7 +355,7 @@ class Player(object):
                                 string_to_show = self.title_prefix + self.oldUserInput['Title']
                                 if stop():
                                     break
-                                self.outputStream.write(string_to_show, lock)
+                                self.outputStream.write(msg=string_to_show, thread_lock=lock)
                             else:
                                 if (logger.isEnabledFor(logging.INFO)):
                                     logger.info('Icy-Title is NOT valid')
@@ -363,7 +363,7 @@ class Player(object):
                                 string_to_show = self.title_prefix + title
                                 if stop():
                                     break
-                                self.outputStream.write(string_to_show, lock)
+                                self.outputStream.write(msg=string_to_show, thread_lock=lock)
                                 self.oldUserInput['Title'] = title
                         else:
                             all_data = a_data.split(b'\n')
@@ -386,7 +386,7 @@ class Player(object):
                                                 logger.info('start of playback detected')
                                             if self.outputStream.last_written_string.startswith('Connecting '):
                                                 new_input = self.outputStream.last_written_string.replace('Connecting to', 'Playing').split(' ... ')[0]
-                                                self.outputStream.write(new_input, lock)
+                                                self.outputStream.write(msg=new_input, thread_lock=lock)
                                                 if self.oldUserInput['Title'] == '':
                                                     self.oldUserInput['Input'] = new_input
                                                 else:
@@ -453,7 +453,7 @@ class Player(object):
         self.show_volume = True
         self.title_prefix = ''
         self.playback_is_on = False
-        self.outputStream.write('Station: "{}" - Opening connection...'.format(name), self.status_update_lock)
+        self.outputStream.write(msg='Station: "{}" - Opening connection...'.format(name), thread_lock=self.status_update_lock)
         if logger.isEnabledFor(logging.INFO):
             logger.info('Selected Station: "{}"'.format(name))
         if encoding:
@@ -562,9 +562,9 @@ class Player(object):
             self.title_prefix = ''
             self.show_volume = True
         if self.oldUserInput['Title'] == '':
-            self.outputStream.write(self.title_prefix + self._format_title_string(self.oldUserInput['Input']))
+            self.outputStream.write(msg=self.title_prefix + self._format_title_string(self.oldUserInput['Input']))
         else:
-            self.outputStream.write(self.title_prefix + self._format_title_string(self.oldUserInput['Title']))
+            self.outputStream.write(msg=self.title_prefix + self._format_title_string(self.oldUserInput['Title']))
 
     def _mute(self):
         """ to be implemented on subclasses """
@@ -896,7 +896,7 @@ class MpvPlayer(Player):
         else:
             info_string = self._format_title_string(self.oldUserInput['Input'])
         string_to_show = self._format_volume_string('Volume: ' + str(vol) + '%') + info_string
-        self.outputStream.write(string_to_show)
+        self.outputStream.write(msg=string_to_show)
         self.threadUpdateTitle(self.status_update_lock)
         self.volume = vol
 
