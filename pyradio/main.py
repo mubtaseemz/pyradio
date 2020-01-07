@@ -133,7 +133,7 @@ def shell():
     if args.list is False and args.add is False:
         print('Reading playlist...')
     sys.stdout.flush()
-    ret = pyradio_config.read_playlist_file(args.stations)
+    ret = pyradio_config.read_playlist_file(stationFile=args.stations)
     if ret < 0:
         print_playlist_selection_error(args.stations, pyradio_config, ret)
 
