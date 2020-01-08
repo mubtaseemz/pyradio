@@ -16,9 +16,11 @@ import random
 #import signal
 from sys import version as python_version, version_info, platform
 from os.path import join, basename, getmtime, getsize
+from os import remove
 from platform import system
 from time import ctime, sleep
 from datetime import datetime
+import glob
 
 from .config import HAS_REQUESTS
 from .common import *
@@ -228,6 +230,8 @@ class PyRadio(object):
                 self.ws.SERVICE_CONNECTION_ERROR: self._print_service_connection_error,
                 self.ws.PLAYER_CHANGED_INFO_MODE: self._show_player_changed_in_config,
                 self.ws.REGISTER_SAVE_ERROR_MODE: self._print_register_save_error,
+                self.ws.CLEAR_REGISTER_MODE: self._print_clear_register,
+                self.ws.CLEAR_ALL_REGISTERS_MODE: self._print_clear_all_registers,
                 }
 
         """ list of help functions """
@@ -1235,6 +1239,7 @@ class PyRadio(object):
         # start 1250 ms counter
         th = threading.Timer(1.25, self.closeRecoveryNotification)
         th.start()
+        th.join()
 
     def closeRecoveryNotification(self, *arg, **karg):
         #arg[1].acquire()
@@ -1247,8 +1252,9 @@ class PyRadio(object):
         self._show_help(txt, mode_to_set=self.ws.HISTORY_EMPTY_NOTIFICATION, caption='',
                 prompt='', is_message=True)
         # start 1250 ms counter
-        th = threading.Timer(.5, self.closeHistoryEmptyNotification)
+        th = threading.Timer(.75, self.closeHistoryEmptyNotification)
         th.start()
+        th.join()
 
     def closeHistoryEmptyNotification(self):
         self.ws.close_window()
@@ -1268,6 +1274,7 @@ class PyRadio(object):
         self._theme_not_supported_thread = threading.Timer(self._theme_not_supported_notification_duration, self.closeThemeNotSupportedNotification)
         self._theme_not_supported_thread.start()
         curses.doupdate()
+        self._theme_not_supported_thread.join()
 
     def closeThemeNotSupportedNotification(self, *arg, **karg):
         #arg[1].acquire()
@@ -1867,6 +1874,32 @@ class PyRadio(object):
                 is_message=True)
         self._update_version = ''
 
+    def _print_clear_register(self):
+        if self._cnf.is_register:
+            txt ='''Are you sure you want to clear the contents
+                of this register?
+
+                This action is not recoverable!
+
+                Press "|y|" to confirm, or "|n|" to cancel'''
+            self._show_help(txt, self.ws.CLEAR_REGISTER_MODE,
+                    caption = ' Clear register ',
+                    prompt = ' ',
+                    is_message=True)
+
+    def _print_clear_all_registers(self):
+        txt ='''Are you sure you want to clear the contents
+            of all the registers?
+
+            This action is not recoverable!
+
+            Press "|y|" to confirm, or "|n|" to cancel'''
+        self._show_help(txt, self.ws.CLEAR_ALL_REGISTERS_MODE,
+                caption = ' Clear all registers ',
+                prompt = ' ',
+                is_message=True)
+
+
     def _align_stations_and_refresh(self, cur_mode, a_startPos=-1, a_selection=-1):
         need_to_scan_playlist = False
         """ refresh reference """
@@ -2051,8 +2084,9 @@ class PyRadio(object):
                     txt = '____All registers are empty!!!___'
                     self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
                     self._cnf._open_register_list = False
-                    th = threading.Timer(.5, self.refreshBody)
+                    th = threading.Timer(.75, self.refreshBody)
                     th.start()
+                    th.join()
                     return
                 if self.selections[self.ws.REGISTER_MODE][0] > self.number_of_items:
                     self.selections[self.ws.REGISTER_MODE][0] = 0
@@ -2084,106 +2118,112 @@ class PyRadio(object):
             False: We do not need resize
         """
 
+        result = True
         if not self._cnf.can_go_back_in_time:
             self._show_no_more_playlist_history()
-            return False
-        playlist_history = self._cnf.copy_playlist_history()
-        #logger.error('DE playlist_history\n\n{}\n\n'.format(playlist_history))
-        self._set_active_stations()
-        if reset:
-            self._cnf.reset_playlist_history()
-        removed_playlist_history_item = self._cnf.remove_from_playlist_history()
-        err_string = '"|{}|"'.format(self._cnf.station_title)
+            result = False
+        if result:
+            playlist_history = self._cnf.copy_playlist_history()
+            #logger.error('DE playlist_history\n\n{}\n\n'.format(playlist_history))
+            self._set_active_stations()
+            if reset:
+                self._cnf.reset_playlist_history()
+            removed_playlist_history_item = self._cnf.remove_from_playlist_history()
+            err_string = '"|{}|"'.format(self._cnf.station_title)
 
-        #logger.error('DE\n\n Opening: "{}"\n\n'.format(self._cnf.station_path))
-        ret = self._cnf.read_playlist_file(stationFile=self._cnf.station_path)
+            #logger.error('DE\n\n Opening: "{}"\n\n'.format(self._cnf.station_path))
+            ret = self._cnf.read_playlist_file(stationFile=self._cnf.station_path)
 
-        if ret == -1:
-            #self.stations = self._cnf.playlists
-            self._cnf.add_to_playlist_history(*removed_playlist_history_item)
-            self._playlist_error_message = """Cannot restore playlist
-                {}
-
-                The playlist file has been edited (and corrupted)
-                time after you opened subsequent playlist(s), or
-                its access rights have been changed since then.
-                """.format(err_string.center(48, '_'))
-            self._print_playlist_load_error()
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug('Error loading playlist: "{}"'.format(self.stations[self.selection][-1]))
-            return False
-        elif ret == -2:
-            #self.stations = self._cnf.playlists
-            self._cnf.add_to_playlist_history(*removed_playlist_history_item)
-            self._playlist_error_message = """Cannot restore playlist
-                {}
-
-                The playlist file was deleted (or renamed) some
-                time after you opened subsequent playlist(s).
-                """.format(err_string.center(48, '_'))
-            self._print_playlist_not_found_error()
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug('Playlist not found: "{}"'.format(self.stations[self.selection][-1]))
-            return False
-        elif ret == -7:
-            self._cnf.add_to_playlist_history(*removed_playlist_history_item)
-            if self._cnf.playlist_recovery_result == 1:
+            if ret == -1:
+                #self.stations = self._cnf.playlists
+                self._cnf.add_to_playlist_history(*removed_playlist_history_item)
                 self._playlist_error_message = """Cannot restore playlist
                     {}
 
-                    Both a playlist file (CSV) and a playlist backup
-                    file (TXT) exist for the selected playlist. In
-                    this case, PyRadio would try to delete the CSV
-                    file, and then rename the TXT file to CSV.\n
-                    Unfortunately, deleting the CSV file has failed,
-                    so you have to manually address the issue.
+                    The playlist file has been edited (and corrupted)
+                    time after you opened subsequent playlist(s), or
+                    its access rights have been changed since then.
                     """.format(err_string.center(48, '_'))
-            else:
+                self._print_playlist_load_error()
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug('Error loading playlist: "{}"'.format(self.stations[self.selection][-1]))
+                result = False
+            elif ret == -2:
+                #self.stations = self._cnf.playlists
+                self._cnf.add_to_playlist_history(*removed_playlist_history_item)
                 self._playlist_error_message = """Cannot restore playlist
                     {}
 
-                    A playlist backup file (TXT) has been found for
-                    the selected playlist. In this case, PyRadio would
-                    try to rename this file to CSV.\n
-                    Unfortunately, renaming this file has failed, so
-                    you have to manually address the issue.
-                    """.format(err_string.center(50, '_'))
-            self._print_playlist_recovery_error()
-            return False
-        else:
-            self._playlist_error_message = ''
-            self.number_of_items = ret
-            if removed_playlist_history_item[-1]:
-                # coming back from online browser
-                self.playing = removed_playlist_history_item[-2]
-                self.selection = removed_playlist_history_item[-3]
-                self.startPos = removed_playlist_history_item[-4]
-            else:
-                # coming back from local playlist
-                self.selection = self._cnf.history_selection
-                self.startPos = self._cnf.history_startPos
+                    The playlist file was deleted (or renamed) some
+                    time after you opened subsequent playlist(s).
+                    """.format(err_string.center(48, '_'))
+                self._print_playlist_not_found_error()
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug('Playlist not found: "{}"'.format(self.stations[self.selection][-1]))
+                result = False
+            elif ret == -7:
+                self._cnf.add_to_playlist_history(*removed_playlist_history_item)
+                if self._cnf.playlist_recovery_result == 1:
+                    self._playlist_error_message = """Cannot restore playlist
+                        {}
 
-            #logger.error('DE old {}'.format(removed_playlist_history_item))
-            #for n in self._cnf._ps._p:
-            #    logger.error('DE cur {}'.format(n))
-            #logger.error('DE \n\nselection = {0}, startPos = {1}, playing = {2}\n\n'.format(self.selection, self.startPos, self.playing))
-            self.stations = self._cnf.stations
-            self._align_stations_and_refresh(self.ws.PLAYLIST_MODE,
-                    a_startPos=self.startPos,
-                    a_selection=self.selection)
-            if self.playing < 0:
-                self._put_selection_in_the_middle(force=True)
-                self.refreshBody()
-            if not self._cnf.browsing_station_service and \
-                    self._cnf.online_browser:
-                if logger.isEnabledFor(logging.INFO):
-                    logger.info('Closing online browser!')
-                self._cnf.online_browser = None
-            # check if browsing_station_service has changed
-            if not self._cnf.browsing_station_service and \
-                    removed_playlist_history_item[-1]:
-                return True
-            return False
+                        Both a playlist file (CSV) and a playlist backup
+                        file (TXT) exist for the selected playlist. In
+                        this case, PyRadio would try to delete the CSV
+                        file, and then rename the TXT file to CSV.\n
+                        Unfortunately, deleting the CSV file has failed,
+                        so you have to manually address the issue.
+                        """.format(err_string.center(48, '_'))
+                else:
+                    self._playlist_error_message = """Cannot restore playlist
+                        {}
+
+                        A playlist backup file (TXT) has been found for
+                        the selected playlist. In this case, PyRadio would
+                        try to rename this file to CSV.\n
+                        Unfortunately, renaming this file has failed, so
+                        you have to manually address the issue.
+                        """.format(err_string.center(50, '_'))
+                self._print_playlist_recovery_error()
+                result = False
+            else:
+                self._playlist_error_message = ''
+                self.number_of_items = ret
+                if removed_playlist_history_item[-1]:
+                    # coming back from online browser
+                    self.playing = removed_playlist_history_item[-2]
+                    self.selection = removed_playlist_history_item[-3]
+                    self.startPos = removed_playlist_history_item[-4]
+                else:
+                    # coming back from local playlist
+                    self.selection = self._cnf.history_selection
+                    self.startPos = self._cnf.history_startPos
+
+                #logger.error('DE old {}'.format(removed_playlist_history_item))
+                #for n in self._cnf._ps._p:
+                #    logger.error('DE cur {}'.format(n))
+                #logger.error('DE \n\nselection = {0}, startPos = {1}, playing = {2}\n\n'.format(self.selection, self.startPos, self.playing))
+                self.stations = self._cnf.stations
+                self._align_stations_and_refresh(self.ws.PLAYLIST_MODE,
+                        a_startPos=self.startPos,
+                        a_selection=self.selection)
+                if self.playing < 0:
+                    self._put_selection_in_the_middle(force=True)
+                    self.refreshBody()
+                if not self._cnf.browsing_station_service and \
+                        self._cnf.online_browser:
+                    if logger.isEnabledFor(logging.INFO):
+                        logger.info('Closing online browser!')
+                    self._cnf.online_browser = None
+                # check if browsing_station_service has changed
+                if not self._cnf.browsing_station_service and \
+                        removed_playlist_history_item[-1]:
+                    result = True
+                else:
+                    result = False
+            if result:
+                self._normal_mode_resize()
+        return result
 
     def _get_station_id(self, find):
         for i, a_station in enumerate(self.stations):
@@ -2218,20 +2258,21 @@ class PyRadio(object):
         return i_find
 
     def _set_active_stations(self):
-        if self.player.isPlaying():
-            self.active_stations = [
-                    [ self.stations[self.selection][0], self.selection ],
-                    [ self.stations[self.playing][0], self.playing ]
-                    ]
-        else:
-            if self.number_of_items > 0:
+        if self.stations:
+            if self.player.isPlaying():
                 self.active_stations = [
                         [ self.stations[self.selection][0], self.selection ],
-                        [ '', -1 ] ]
+                        [ self.stations[self.playing][0], self.playing ]
+                        ]
             else:
-                self.active_stations = [
-                        [ '', self.selection ],
-                        [ '', -1 ] ]
+                if self.number_of_items > 0:
+                    self.active_stations = [
+                            [ self.stations[self.selection][0], self.selection ],
+                            [ '', -1 ] ]
+                else:
+                    self.active_stations = [
+                            [ '', self.selection ],
+                            [ '', -1 ] ]
         #logger.error('DE active_stations = \n\n{}\n\n'.format(self.active_stations))
 
     def get_active_encoding(self, an_encoding):
@@ -2563,6 +2604,42 @@ class PyRadio(object):
         a_lock = self.player.status_update_lock if self.player else None
         self.log.write(suffix=self._status_suffix, thread_lock=a_lock)
 
+    def _clear_register_file(self):
+        """Clear the contents of a register
+           and delete the register file.
+        """
+
+        self._set_active_stations()
+        self.stations = []
+        self.number_of_items = 0
+        self.selection = 0
+        self.startPos = 0
+        self.playing = -1
+        self.selections[self.ws.REGISTER_MODE] = [
+                self.selection,
+                self.startPos,
+                self.playing,
+                self.stations
+                ]
+        self._cnf.dirty_playlist = True
+        self.saveCurrentPlaylist()
+        try:
+            remove(self._cnf.station_path)
+        except:
+            pass
+
+    def _clear_all_register_files(self):
+        self._set_active_stations()
+        if self._cnf.is_register:
+            self._clear_register_file()
+        files = glob.glob(path.join(self._cnf.registers_dir, '*.csv'))
+        if files:
+            for a_file in files:
+                try:
+                    remove(a_file)
+                except:
+                    pass
+
     def keypress(self, char):
         if self.ws.operation_mode in self._no_keyboard:
             if logger.isEnabledFor(logging.DEBUG):
@@ -2572,21 +2649,27 @@ class PyRadio(object):
         if self._force_exit or \
                 self.ws.operation_mode == self.ws.CONFIG_SAVE_ERROR_MODE:
             return -1
-        #if logger.isEnabledFor(logging.ERROR):
-        #    logger.error('DE {}'.format(self.ws._dq))
+
+        ##############################################################################
+        #
+        # Reset jumpnr
+        #
+        elif self.jumpnr and char in (curses.KEY_EXIT, ord('q'), 27) and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            self._update_status_bar_right()
+            return
+        #
+        # End of Reset jumpnr
+        #
+        ##############################################################################
 
         ##############################################################################
         #
         # OpenRegister - char = '
         #
-        elif self.jumpnr and char in (curses.KEY_EXIT, ord('q'), 27) and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
-            self.jumpnr = ''
-            self._update_status_bar_right()
-            return
         elif not self._register_open_pressed and char == ord('\'') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
-            # y pressed
+            # ' pressed - get into open register mode
             self._update_status_bar_right(reg_open_pressed=True, status_suffix='\'')
             return
         elif (self._register_open_pressed and char < 127 \
@@ -2623,22 +2706,23 @@ class PyRadio(object):
             return
         elif self._backslash_pressed and char == ord('\\') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
-            # \\ pressed
+            # \\ pressed - go back in history
             self._update_status_bar_right()
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('opening previous playlist')
-                if self._open_playlist_from_history():
-                    self._normal_mode_resize()
+                self._open_playlist_from_history()
             else:
                 self._show_no_more_playlist_history()
             return
         elif self._backslash_pressed and char in (curses.KEY_EXIT, 27) and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
+            # ESC pressed - leave \ mode
             self._update_status_bar_right()
             return
         elif self._backslash_pressed and char == ord(']') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
+            # ] pressed - go to first playlist ing history
             self._update_status_bar_right()
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
@@ -2648,6 +2732,36 @@ class PyRadio(object):
             else:
                 self._show_no_more_playlist_history()
             return
+        elif self._backslash_pressed and char == ord('c') and \
+                self._cnf.is_register and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            # c pressed - clear register
+            logger.error('DE clear current register')
+            self._update_status_bar_right()
+            if self.number_of_items :
+                self._print_clear_register()
+            else:
+                txt = '___Register is already empty!!!__'
+                self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
+                self._cnf._open_register_list = False
+                th = threading.Timer(.75, self.refreshBody)
+                th.start()
+                th.join()
+        elif self._backslash_pressed and char == ord('C') and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            # C pressed - clear all registers
+            logger.error('DE clear all registers')
+            self._update_status_bar_right()
+            if glob.glob(path.join(self._cnf.registers_dir, '*.csv')):
+                self._print_clear_all_registers()
+            else:
+                txt = '____All registers are empty!!!___'
+                self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
+                self._cnf._open_register_list = False
+                th = threading.Timer(.75, self.refreshBody)
+                th.start()
+                th.join()
+
         #
         # End of Playlist history - char = \
         #
@@ -3132,6 +3246,22 @@ class PyRadio(object):
                         if logger.isEnabledFor(logging.INFO):
                             logger.info('Setting default theme: {}'.format(self._theme_name))
                 return
+
+        elif self.ws.operation_mode == self.ws.CLEAR_REGISTER_MODE:
+            if char in ( ord('y'), ord('n')):
+                self.ws.close_window()
+                if char == ord('y'):
+                    self._clear_register_file()
+                self.refreshBody()
+            return
+
+        elif self.ws.operation_mode == self.ws.CLEAR_ALL_REGISTERS_MODE:
+            if char in ( ord('y'), ord('n')):
+                self.ws.close_window()
+                if char == ord('y'):
+                    self._clear_all_register_files()
+                self.refreshBody()
+            return
 
         elif char in (ord('/'), ) and self.ws.operation_mode in self._search_modes.keys():
             self._update_status_bar_right()
@@ -3711,14 +3841,20 @@ class PyRadio(object):
 
                 elif char in (curses.ascii.NAK, 21):
                     # ^U, move station Up
+                    if self.jumpnr:
+                        self._cnf.jump_tag = int(self.jumpnr) - 1
                     self._update_status_bar_right()
                     self._move_station(-1)
+                    self._cnf.jump_tag = -1
                     return
 
                 elif char in (curses.ascii.EOT, 4):
                     # ^D, move station Down
+                    if self.jumpnr:
+                        self._cnf.jump_tag = int(self.jumpnr) - 1
                     self._update_status_bar_right()
                     self._move_station(1)
+                    self._cnf.jump_tag = -1
                     return
 
             elif self.ws.operation_mode == self.ws.PLAYLIST_MODE:

@@ -480,7 +480,6 @@ class Player(object):
         # start playback check timer thread
         self.stop_timeout_counter_thread = False
         try:
-            #self.connection_timeout_thread = threading.Timer(self.playback_timeout, self.playback_timeout_handler)
             self.connection_timeout_thread = threading.Thread(
                     target=self.playback_timeout_counter,
                     args=(self.status_update_lock,
