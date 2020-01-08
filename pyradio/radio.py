@@ -142,8 +142,20 @@ class PyRadio(object):
     _unnamed_register = None
 
     def ss(self, msg):
+        logger.error('DE ==========')
         logger.error('DE ===> {}'.format(msg))
-        logger.error('DE ==========\n  ===> NORMAL_MODE - {0}\n  ===> PLAYLIST_MODE - {1}\n  ===> REGISTER_MODE - {2}\n========='.format(*self.selections))
+        logger.error('DE NORMAL_MODE: {0}, {1}, {2}'.format(
+            self.selections[0][0],
+            self.selections[0][1],
+            self.selections[0][2]))
+        logger.error('DE PLAYLIST_MODE: {0}, {1}, {2}'.format(
+            self.selections[1][0],
+            self.selections[1][1],
+            self.selections[1][2]))
+        logger.error('DE REGISTER_MODE: {0}, {1}, {2}'.format(
+            self.selections[2][0],
+            self.selections[2][1],
+            self.selections[2][2]))
 
     def __init__(self, pyradio_config, play=False, req_player='', theme=''):
         self._cnf = pyradio_config
@@ -154,7 +166,7 @@ class PyRadio(object):
         self.selections = [ [0, 0, -1, self._cnf.stations],
                             [ind, 0, ind, self._cnf.playlists],
                             [0, 0, -1, self._cnf.playlists]]
-        #self.ss('__init__')
+        self.ss('__init__')
         self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.operation_mode]
         self.play = play
         self.stdscr = None
@@ -1156,7 +1168,11 @@ class PyRadio(object):
 
     def _format_playlist_line(self, lineNum, pad, station):
         """ format playlist line so that if fills self.maxX """
-        line = "{0}. {1}".format(str(lineNum + self.startPos + 1).rjust(pad), station[0])
+        pl_line = "{0}. {1}".format(str(lineNum + self.startPos + 1).rjust(pad), station[0])
+        if self._cnf.open_register_list:
+            line = pl_line.replace('register_', 'Register: ')
+        else:
+            line = pl_line
         f_data = ' [{0}, {1}]'.format(station[2], station[1])
         if version_info < (3, 0):
             if cjklen(line.decode('utf-8', 'replace')) + cjklen(f_data.decode('utf-8', 'replace')) > self.bodyMaxX:
@@ -1890,7 +1906,7 @@ class PyRadio(object):
             else:
                 if self.player.isPlaying():
                     """ The playlist is not empty """
-                    if self.playing > self.number_of_items - 1:
+                    if self.playing > self.number_of_items - 1 or self._cnf.is_register:
                         """ Previous playing station is now invalid
                             Need to scan playlist """
                         need_to_scan_playlist = True
@@ -1952,8 +1968,11 @@ class PyRadio(object):
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('self.selection = {0}, self.playing = {1}, self.startPos = {2}'.format(self.selection, self.playing, self.startPos))
-        self.selections[self.ws.NORMAL_MODE] = [self.selection, self.startPos, self.playing, self._cnf.stations]
-        #self.ss('_align_stations_and_refresh')
+        if self._cnf.is_register:
+            self.selections[self.ws.REGISTER_MODE] = [self.selection, self.startPos, self.playing, self._cnf.stations]
+        else:
+            self.selections[self.ws.NORMAL_MODE] = [self.selection, self.startPos, self.playing, self._cnf.stations]
+        self.ss('_align_stations_and_refresh')
         self.refreshBody()
 
     def _open_playlist(self):
@@ -2020,7 +2039,7 @@ class PyRadio(object):
                 txt = '''Reading playlists. Please wait...'''
             self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
             self.selections[self.ws.operation_mode] = [self.selection, self.startPos, self.playing, self._cnf.stations]
-            #self.ss('_open_playlist')
+            self.ss('_open_playlist')
             self.ws.window_mode = self.ws.PLAYLIST_MODE
             if self._cnf.open_register_list:
                 self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.REGISTER_MODE]
@@ -2032,9 +2051,13 @@ class PyRadio(object):
                     txt = '____All registers are empty!!!___'
                     self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
                     self._cnf._open_register_list = False
-                    th = threading.Timer(.45, self.refreshBody)
+                    th = threading.Timer(.5, self.refreshBody)
                     th.start()
                     return
+                if self.selections[self.ws.REGISTER_MODE][0] > self.number_of_items:
+                    self.selections[self.ws.REGISTER_MODE][0] = 0
+                    self.selection = 0
+                    self.ss('_open_playlist - fixed')
             else:
                 self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.operation_mode]
                 self.number_of_items, self.playing = self.readPlaylists()
@@ -2556,13 +2579,18 @@ class PyRadio(object):
         #
         # OpenRegister - char = '
         #
+        elif self.jumpnr and char in (curses.KEY_EXIT, ord('q'), 27) and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            self.jumpnr = ''
+            self._update_status_bar_right()
+            return
         elif not self._register_open_pressed and char == ord('\'') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             # y pressed
             self._update_status_bar_right(reg_open_pressed=True, status_suffix='\'')
             return
         elif (self._register_open_pressed and char < 127 \
-                and (char == ord('\'') \
+                and (char in (curses.KEY_EXIT, 27, ord('\'')) \
                 or chr(char).isalpha() \
                 or chr(char).isdigit()) \
                 and self.ws.operation_mode == self.ws.NORMAL_MODE):
@@ -2572,6 +2600,9 @@ class PyRadio(object):
             if char == ord('\''):
                 self._update_status_bar_right()
                 self._cnf.open_register_list = True
+            elif char in (curses.KEY_EXIT, 27):
+                self._update_status_bar_right()
+                return
             else:
                 self._cnf.register_to_open = chr(char).lower()
             self._check_to_open_playlist()
@@ -2602,10 +2633,13 @@ class PyRadio(object):
             else:
                 self._show_no_more_playlist_history()
             return
+        elif self._backslash_pressed and char in (curses.KEY_EXIT, 27) and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE:
+            self._update_status_bar_right()
+            return
         elif self._backslash_pressed and char == ord(']') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
-            self._backslash_pressed = False
-            self._register_assign_pressed = False
+            self._update_status_bar_right()
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('opening first playlist')
@@ -2631,7 +2665,8 @@ class PyRadio(object):
         elif (self._register_assign_pressed and char < 127 \
                 and (chr(char).isalpha() \
                 or chr(char).isdigit() \
-                or char in (ord('\n'), ord('\r'), curses.KEY_ENTER)) \
+                or char in (ord('\n'), ord('\r'), curses.KEY_ENTER,
+                    curses.KEY_EXIT, 27)) \
                 and self.ws.operation_mode == self.ws.NORMAL_MODE):
             # get station to register
             # accept a-z, 0-9 and -
@@ -2641,6 +2676,9 @@ class PyRadio(object):
                 self._unnamed_register = self.stations[self.selection]
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('saving to unnamed register: {}'.format(self._unnamed_register))
+            elif char in (curses.KEY_EXIT, 27):
+                self._update_status_bar_right()
+                return
             else:
                 self._unnamed_register = self.stations[self.selection]
                 if logger.isEnabledFor(logging.DEBUG):
@@ -3485,6 +3523,11 @@ class PyRadio(object):
                         self.refreshBody()
                         return
                     else:
+                        """ go back to playlist history """
+                        if self._cnf.is_register:
+                            if self._open_playlist_from_history():
+                                self._normal_mode_resize()
+                            return
                         """ exit """
                         # stop updating the status bar
                         self.log.asked_to_stop = True

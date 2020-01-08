@@ -601,6 +601,8 @@ class PyRadioStations(object):
             self.station_title = a_title
         else:
             self.station_title = ''.join(self.station_file_name.split('.')[:-1])
+        if self.is_register and self.station_title.startswith('register_'):
+            self.station_title = self.station_title.replace('register_', 'Register: ')
         self._ps.remove_duplicates()
         #for n in self._ps._p:
         #    logger.error('DE ------ {}'.format(n))
@@ -627,7 +629,7 @@ class PyRadioStations(object):
 
     def remove_from_playlist_history(self):
         item = self._ps.pop()
-        while self._ps._p[-1][1].startswith('register_'):
+        while self._ps._p[-1][6]:
             item = self._ps.pop()
         return item
 
