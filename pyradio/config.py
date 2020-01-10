@@ -408,6 +408,7 @@ class PyRadioStations(object):
                 self._read_playlist_version = self._playlist_version = self.PLAYLIST_HAS_NAME_URL_ENCODING_BROWSER
                 read_file = False
             else:
+                self.stations = []
                 return ret
 
         if read_file:
@@ -862,6 +863,13 @@ class PyRadioStations(object):
                 ret = reg_file
         ret = ''
         return ret
+
+    def pop_to_first_real_playlist(self):
+        self._ps.pop_to_first_real_playlist()
+
+    def history_item(self, an_item):
+        logger.error('DE /// history_item = {}'.format(self._ps._p[an_item]))
+        return self._ps._p[an_item]
 
 class PyRadioConfig(PyRadioStations):
 
@@ -1390,9 +1398,9 @@ class PyRadioPlaylistStack(object):
             browsing_station_service])
         #logger.error('DE playlist history\n{}\n'.format(self._p))
 
-    def get_member(self, member):
+    def get_item_member(self, member, item_id=-1):
         if member in self._id.keys():
-            return self._p[-1][self._id[member]]
+            return self._p[item_id][self._id[member]]
         else:
             raise ValueError('member "{}" does not exist'.format(member))
 
@@ -1417,3 +1425,8 @@ class PyRadioPlaylistStack(object):
     def copy(self):
         return self._p[:]
 
+    def pop_to_first_real_playlist(self):
+        if not self.get_item_member('is_register'):
+            return
+        while self.get_item_member('is_register'):
+            self.pop()

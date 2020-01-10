@@ -413,7 +413,7 @@ class Player(object):
                     logger.debug("delay thread start failed")
 
     def updateTitle(self, *arg, **karg):
-        arg[0].write(arg[1], arg[2])
+        arg[0].write(msg=arg[1], thread_lock=arg[2])
 
     def _is_icy_entry(self, a_string):
         #logger.error("**** a_string = {}".format(a_string))

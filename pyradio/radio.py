@@ -143,6 +143,8 @@ class PyRadio(object):
 
     _unnamed_register = None
 
+    _main_help_id = 0
+
     def ss(self, msg):
         logger.error('DE ==========')
         logger.error('DE ===> {}'.format(msg))
@@ -168,7 +170,7 @@ class PyRadio(object):
         self.selections = [ [0, 0, -1, self._cnf.stations],
                             [ind, 0, ind, self._cnf.playlists],
                             [0, 0, -1, self._cnf.playlists]]
-        self.ss('__init__')
+        #self.ss('__init__')
         self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.operation_mode]
         self.play = play
         self.stdscr = None
@@ -188,6 +190,7 @@ class PyRadio(object):
                 self.ws.SELECT_STATION_MODE: self._redisplay_station_select_win_refresh_and_resize,
                 self.ws.MAIN_HELP_MODE: self._show_main_help,
                 self.ws.MAIN_HELP_MODE_PAGE_2: self._show_main_help_page_2,
+                self.ws.MAIN_HELP_MODE_PAGE_3: self._show_main_help_page_3,
                 self.ws.PLAYLIST_HELP_MODE: self._show_playlist_help,
                 self.ws.THEME_HELP_MODE: self._show_theme_help,
                 self.ws.CONFIG_HELP_MODE: self._show_config_help,
@@ -617,7 +620,10 @@ class PyRadio(object):
                 self.ws.operation_mode == self.ws.PLAYLIST_LOAD_ERROR_MODE or \
                     self.ws.operation_mode == self.ws.PLAYLIST_NOT_FOUND_ERROR_MODE:
             line = self._format_playlist_line(lineNum, pad, station)
-            self.bodyWin.addstr(lineNum, 0, line, col)
+            try:
+                self.bodyWin.addstr(lineNum, 0, line, col)
+            except:
+                pass
         else:
             if self._cnf.browsing_station_service:
                 played, line = self._cnf.online_browser.format_station_line(lineNum + self.startPos, pad, self.bodyMaxX)
@@ -943,7 +949,12 @@ class PyRadio(object):
     def saveCurrentPlaylist(self, stationFile =''):
         ret = self._cnf.save_playlist_file(stationFile)
         self.refreshBody()
-        if ret == -1:
+        if ret == 0 and not self._cnf.is_register:
+            self._show_notification_with_delay(
+                    txt='___Playlist saved!!!___',
+                    mode_to_set=self.ws.NORMAL_MODE,
+                    callback_function=self.refreshBody)
+        elif ret == -1:
             self._print_save_playlist_error_1()
         elif ret == -2:
             self._print_save_playlist_error_2()
@@ -960,7 +971,7 @@ class PyRadio(object):
         self._update_status_bar_right()
         ret = self._cnf.read_playlist_file(stationFile=self._cnf.station_path)
         if ret == -1:
-            self.stations = self._cnf.playlists
+            #self.stations = self._cnf.playlists
             self.ws.close_window()
             self.refreshBody()
             self._print_playlist_reload_error()
@@ -1037,17 +1048,20 @@ class PyRadio(object):
                 prompt=' Press any key to hide ',
                 too_small_msg='Window too small to show message',
                 is_message=False,
-                reset_metrics=False):
+                reset_metrics=True):
         if reset_metrics:
             if mode_to_set in self._help_metrics.keys():
                 del self._help_metrics[mode_to_set]
 
         """ Display a help, info or question window.  """
         if mode_to_set == self.ws.MAIN_HELP_MODE:
-            caption = ' Help (1/2) '
+            caption = ' Help (1/3) '
             prompt=' Press n/p or any other key to hide '
         elif mode_to_set == self.ws.MAIN_HELP_MODE_PAGE_2:
-            caption = ' Help (2/2) '
+            caption = ' Help (2/3) '
+            prompt=' Press n/p or any other key to hide '
+        elif mode_to_set == self.ws.MAIN_HELP_MODE_PAGE_3:
+            caption = ' Help (3/3) '
             prompt=' Press n/p or any other key to hide '
         self.helpWinContainer = None
         self.helpWin = None
@@ -1233,13 +1247,11 @@ class PyRadio(object):
             self._redisplay[self.ws.operation_mode]()
 
     def _show_playlist_recovered(self):
-        txt = 'Playlist recoverd!'
-        self._show_help(txt, mode_to_set=self.ws.operation_mode, caption='',
-                prompt='', is_message=True)
-        # start 1250 ms counter
-        th = threading.Timer(1.25, self.closeRecoveryNotification)
-        th.start()
-        th.join()
+        self._show_notification_with_delay(
+                txt='___Playlist recovered!!!___',
+                mode_to_set=self.ws.operation_mode,
+                delay=1.25,
+                callback_function=self.closeRecoveryNotification)
 
     def closeRecoveryNotification(self, *arg, **karg):
         #arg[1].acquire()
@@ -1248,13 +1260,10 @@ class PyRadio(object):
         self.refreshBody()
 
     def _show_no_more_playlist_history(self):
-        txt = 'Top of history reached!!!'
-        self._show_help(txt, mode_to_set=self.ws.HISTORY_EMPTY_NOTIFICATION, caption='',
-                prompt='', is_message=True)
-        # start 1250 ms counter
-        th = threading.Timer(.75, self.closeHistoryEmptyNotification)
-        th.start()
-        th.join()
+        self._show_notification_with_delay(
+                txt='___Top of history reached!!!___',
+                mode_to_set=self.ws.HISTORY_EMPTY_NOTIFICATION,
+                callback_function=self.closeHistoryEmptyNotification)
 
     def closeHistoryEmptyNotification(self):
         self.ws.close_window()
@@ -1287,7 +1296,7 @@ class PyRadio(object):
     def _show_main_help(self):
         txt = """Up|,|j|,|PgUp|,
                  Down|,|k|,|PgDown    |Change station selection.
-                 g| / |<n>G         |Jump to first or n-th / last station.
+                 <n>g| / |<n>G      |Jump to first /last or n-th station.
                  H M L            |Go to top / middle / bottom of screen.
                  P                |Go to |P|laying station.
                  Enter|,|Right|,|l    |Play selected station.
@@ -1301,7 +1310,9 @@ class PyRadio(object):
                  o| / |s| / |R        ||O|pen / |S|ave / |R|eload playlist.
                  t| / |T            |Load |t|heme / |T|oggle transparency.
                  c                |Open Configuration window."""
-        self._show_help(txt, mode_to_set=self.ws.MAIN_HELP_MODE)
+        self._show_help(txt, mode_to_set=self.ws.MAIN_HELP_MODE, reset_metrics=False)
+        self._help_metrics[self.ws.MAIN_HELP_MODE_PAGE_2] = self._help_metrics[self.ws.MAIN_HELP_MODE]
+        self._help_metrics[self.ws.MAIN_HELP_MODE_PAGE_3] = self._help_metrics[self.ws.MAIN_HELP_MODE]
 
     def _show_main_help_page_2(self):
         txt = """!Playlist editing
@@ -1309,32 +1320,67 @@ class PyRadio(object):
                  e                |Edit current station.
                  E                |Change station's encoding.
                  DEL|,|x            |Delete selected station.
-                 !Playlist history
-                 \\\\               |Open previous playlist.
-                 \\]               |Open first opened playlist.
+                 !Alternative modes
+                 \\                |Enter |Extra Commands| mode.
+                 y                |Enter |Copy| mode.
+                 '                |Enter |Register| mode.
+                 Esc|,|q            |Exit alternative mode.
                  !Moving stations
                  J                |Create a |J|ump tag.
                  <n>^U|,|<n>^D      |Move station |U|p / |D|own.
                  ||_________________|If a |jump tag| exists, move it there.
                  !Searching
                  /| / |n| / |N        |Search, go to next / previous result."""
-        self._show_help(txt, mode_to_set=self.ws.MAIN_HELP_MODE_PAGE_2)
+        self._show_help(txt, mode_to_set=self.ws.MAIN_HELP_MODE_PAGE_2, reset_metrics=False)
+
+    def _show_main_help_page_3(self):
+        txt = """p                |Paste unnamed register.
+                 !Extra Command mode (\\)
+                 \\                |Open previous playlist.
+                 ]                |Open first opened playlist.
+                 p                |Select playlist/register to paste to.
+                 r                |Rename current playlist.
+                 C                |Clear all registers.
+                 !Copy mode (y)
+                 ENTER            |Copy station to unnamed register.
+                 a-z| / |0-9        |Copy station to named register.
+                 !Registe mode (')
+                 '                |Open registers list.
+                 a-z| / |0-9        |Open named register."""
+        self._show_help(txt, mode_to_set=self.ws.MAIN_HELP_MODE_PAGE_3, reset_metrics=False)
 
     def _show_playlist_help(self):
-        txt = """Up|,|j|,|PgUp|,
-                 Down|,|k|,|PgDown    |Change playlist selection.
-                 g| / |<n>G         |Jump to first or n-th / last playlist.
-                 M| / |P            |Jump to |M|iddle / loaded |P|laylist.
-                 Enter|,|Right|,|l    |Open selected playlist.
-                 r                |Re-read playlists from disk.
-                 /| / |n| / |N        |Search, go to next / previous result.
-                 Esc|,|q|,|Left|,|h     |Cancel.
-                 %_Player Keys_
-                 -|/|+| or |,|/|.       |Change volume.
-                 m| / |v            ||M|ute player / Save |v|olume (not in vlc).
-                 %_Other Keys_
-                 t| / |T            |Load |t|heme / |T|oggle transparency."""
-        self._show_help(txt, mode_to_set=self.ws.PLAYLIST_HELP_MODE, caption=' Playlist Help ')
+        if self._cnf.open_register_list:
+            txt = """Up|,|j|,|PgUp|,
+                     Down|,|k|,|PgDown    |Change playlist selection.
+                     <n>g| / |<n>G      |Jump to first /last or n-th station.
+                     M| / |P            |Jump to |M|iddle / loaded |P|laylist.
+                     Enter|,|Right|,|l    |Open selected playlist.
+                     r                |Re-read playlists from disk.
+                     /| / |n| / |N        |Search, go to next / previous result.
+                     \\                |Enter |Extra Command| mode.
+                     Esc|,|q|,|Left|,|h     |Cancel.
+                     %_Player Keys_
+                     -|/|+| or |,|/|.       |Change volume.
+                     m| / |v            ||M|ute player / Save |v|olume (not in vlc).
+                     %_Other Keys_
+                     t| / |T            |Load |t|heme / |T|oggle transparency."""
+            self._show_help(txt, mode_to_set=self.ws.PLAYLIST_HELP_MODE, caption=' Registers List Help ')
+        else:
+            txt = """Up|,|j|,|PgUp|,
+                     Down|,|k|,|PgDown    |Change playlist selection.
+                     <n>g| / |<n>G      |Jump to first /last or n-th station.
+                     M| / |P            |Jump to |M|iddle / loaded |P|laylist.
+                     Enter|,|Right|,|l    |Open selected playlist.
+                     r                |Re-read playlists from disk.
+                     /| / |n| / |N        |Search, go to next / previous result.
+                     Esc|,|q|,|Left|,|h     |Cancel.
+                     %_Player Keys_
+                     -|/|+| or |,|/|.       |Change volume.
+                     m| / |v            ||M|ute player / Save |v|olume (not in vlc).
+                     %_Other Keys_
+                     t| / |T            |Load |t|heme / |T|oggle transparency."""
+            self._show_help(txt, mode_to_set=self.ws.PLAYLIST_HELP_MODE, caption=' Playlist Help ')
 
     def _show_theme_help(self):
             txt = """Up|,|j|,|PgUp|,
@@ -1661,8 +1707,7 @@ class PyRadio(object):
                 self.ws.REGISTER_SAVE_ERROR_MODE,
                 caption= ' Error ',
                 prompt = ' Press any key to hide ',
-                is_message = True,
-                reset_metrics = True)
+                is_message = True)
 
     def _print_unknown_browser_service(self):
         txt = '''The service you are trying to use is not supported.
@@ -1875,17 +1920,16 @@ class PyRadio(object):
         self._update_version = ''
 
     def _print_clear_register(self):
-        if self._cnf.is_register:
-            txt ='''Are you sure you want to clear the contents
-                of this register?
+        txt ='''Are you sure you want to clear the contents
+            of this register?
 
-                This action is not recoverable!
+            This action is not recoverable!
 
-                Press "|y|" to confirm, or "|n|" to cancel'''
-            self._show_help(txt, self.ws.CLEAR_REGISTER_MODE,
-                    caption = ' Clear register ',
-                    prompt = ' ',
-                    is_message=True)
+            Press "|y|" to confirm, or "|n|" to cancel'''
+        self._show_help(txt, self.ws.CLEAR_REGISTER_MODE,
+                caption = ' Clear register ',
+                prompt = ' ',
+                is_message=True)
 
     def _print_clear_all_registers(self):
         txt ='''Are you sure you want to clear the contents
@@ -2005,7 +2049,7 @@ class PyRadio(object):
             self.selections[self.ws.REGISTER_MODE] = [self.selection, self.startPos, self.playing, self._cnf.stations]
         else:
             self.selections[self.ws.NORMAL_MODE] = [self.selection, self.startPos, self.playing, self._cnf.stations]
-        self.ss('_align_stations_and_refresh')
+        #self.ss('_align_stations_and_refresh')
         self.refreshBody()
 
     def _open_playlist(self):
@@ -2072,7 +2116,7 @@ class PyRadio(object):
                 txt = '''Reading playlists. Please wait...'''
             self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
             self.selections[self.ws.operation_mode] = [self.selection, self.startPos, self.playing, self._cnf.stations]
-            self.ss('_open_playlist')
+            #self.ss('_open_playlist')
             self.ws.window_mode = self.ws.PLAYLIST_MODE
             if self._cnf.open_register_list:
                 self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.REGISTER_MODE]
@@ -2081,17 +2125,17 @@ class PyRadio(object):
                     self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.NORMAL_MODE]
                     self.number_of_items = len(self.stations)
                     self.ws.close_window()
-                    txt = '____All registers are empty!!!___'
-                    self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
-                    self._cnf._open_register_list = False
-                    th = threading.Timer(.75, self.refreshBody)
-                    th.start()
-                    th.join()
+                    self._show_notification_with_delay(
+                            txt='____All registers are empty!!!____',
+                            mode_to_set=self.ws.NORMAL_MODE,
+                            callback_function=self.refreshBody)
+                    if self._cnf.is_register:
+                        self.reloadCurrentPlaylist(0)
                     return
                 if self.selections[self.ws.REGISTER_MODE][0] > self.number_of_items:
                     self.selections[self.ws.REGISTER_MODE][0] = 0
                     self.selection = 0
-                    self.ss('_open_playlist - fixed')
+                    #self.ss('_open_playlist - fixed')
             else:
                 self.selection, self.startPos, self.playing, self.stations = self.selections[self.ws.operation_mode]
                 self.number_of_items, self.playing = self.readPlaylists()
@@ -2099,19 +2143,23 @@ class PyRadio(object):
             if self.number_of_items > 0 or self._cnf.open_register_list:
                 self.refreshBody()
 
-    def _open_playlist_from_history(self, reset=False):
+    def _open_playlist_from_history(self, reset=False, list_of_registers=False):
         """Loads a playlist from history
 
         Parameters
         ----------
-        reset
-            if True, load the first history item (which will
-            always be a local playlist).
-            Default is False.
+            reset
+                If True, load the first history item (which will
+                always be a local playlist).
+                Default is False.
+            list_of_registers
+                If False, a playlist is loaded and displayed.
+                If True, the list of registers is opened.
+                Default is False.
 
         Returns
         -------
-            True:  browsing_station_service goes from True to False
+            True:  Browsing_station_service goes from True to False
                    i.e. going from online service browsing to local
                    playlist (needs resize to repaint the whole screen
                    and recalculate all windows)
@@ -2119,7 +2167,7 @@ class PyRadio(object):
         """
 
         result = True
-        if not self._cnf.can_go_back_in_time:
+        if not self._cnf.can_go_back_in_time and not list_of_registers:
             self._show_no_more_playlist_history()
             result = False
         if result:
@@ -2128,10 +2176,16 @@ class PyRadio(object):
             self._set_active_stations()
             if reset:
                 self._cnf.reset_playlist_history()
-            removed_playlist_history_item = self._cnf.remove_from_playlist_history()
+            if list_of_registers:
+                self._cnf.pop_to_first_real_playlist()
+                removed_playlist_history_item = self._cnf.history_item(-1)
+            else:
+                removed_playlist_history_item = self._cnf.remove_from_playlist_history()
             err_string = '"|{}|"'.format(self._cnf.station_title)
 
-            #logger.error('DE\n\n Opening: "{}"\n\n'.format(self._cnf.station_path))
+            #logger.error('DE {}'.format(self._cnf._ps._p))
+
+
             ret = self._cnf.read_playlist_file(stationFile=self._cnf.station_path)
 
             if ret == -1:
@@ -2588,7 +2642,6 @@ class PyRadio(object):
         if self.selection >= self.number_of_items - self.bodyMaxY and \
                 self.number_of_items > self.bodyMaxY:
             self.startPos = self.number_of_items - self.bodyMaxY
-            logger.error('DE *** refreshing body from normal resize')
             self.refreshBody()
 
     def _update_status_bar_right(self, jumpnr='',
@@ -2609,24 +2662,44 @@ class PyRadio(object):
            and delete the register file.
         """
 
-        self._set_active_stations()
-        self.stations = []
-        self.number_of_items = 0
-        self.selection = 0
-        self.startPos = 0
-        self.playing = -1
-        self.selections[self.ws.REGISTER_MODE] = [
-                self.selection,
-                self.startPos,
-                self.playing,
-                self.stations
-                ]
-        self._cnf.dirty_playlist = True
-        self.saveCurrentPlaylist()
+        if self.ws.operation_mode == self.ws.NORMAL_MODE:
+            self._set_active_stations()
+            self.stations = []
+            self.number_of_items = 0
+            self.selection = 0
+            self.startPos = 0
+            self.playing = -1
+            self.selections[self.ws.REGISTER_MODE] = [
+                    self.selection,
+                    self.startPos,
+                    self.playing,
+                    self.stations
+                    ]
+            self._set_active_stations()
+            self._cnf.dirty_playlist = True
+            self.saveCurrentPlaylist()
+            file_to_remove = self._cnf.station_path
+        else:
+            file_to_remove = path.join(self._cnf.registers_dir, self.stations[self.selection][0] + '.csv')
         try:
-            remove(self._cnf.station_path)
+            remove(file_to_remove)
         except:
-            pass
+            if self.ws.operation_mode == self.ws.PLAYLIST_MODE:
+                self._show_notification_with_delay(
+                        txt='___Failed to clear register...___',
+                        mode_to_set=self.ws.NORMAL_MODE,
+                        callback_function=self.refreshBody)
+                return
+        if self.ws.operation_mode == self.ws.PLAYLIST_MODE:
+            self._reload_playlists()
+            if self.number_of_items == 0:
+                self.ws.close_window()
+                self._open_playlist_from_history(list_of_registers=True)
+            if self.selection >= self.number_of_items:
+                self.selection = self.number_of_items -1
+                if self.selection < 0:
+                    self.selection = 0
+                self._put_selection_in_the_middle()
 
     def _clear_all_register_files(self):
         self._set_active_stations()
@@ -2639,6 +2712,17 @@ class PyRadio(object):
                     remove(a_file)
                 except:
                     pass
+        if self.ws.operation_mode == self.ws.PLAYLIST_MODE:
+            self.ws.close_window()
+            self._open_playlist_from_history(list_of_registers=True)
+
+    def _show_notification_with_delay(self, txt, mode_to_set, callback_function,
+            delay=.75, reset_metrics=True):
+        self._show_help(txt, mode_to_set, caption='',
+                prompt='', is_message=True, reset_metrics=reset_metrics)
+        th = threading.Timer(delay, callback_function)
+        th.start()
+        th.join()
 
     def keypress(self, char):
         if self.ws.operation_mode in self._no_keyboard:
@@ -2700,7 +2784,9 @@ class PyRadio(object):
         # Playlist history - char = \
         #
         elif not self._backslash_pressed and char == ord('\\') and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
+                (self.ws.operation_mode == self.ws.NORMAL_MODE or \
+                (self.ws.operation_mode == self.ws.PLAYLIST_MODE and \
+                self._cnf.open_register_list)):
             # \ pressed
             self._update_status_bar_right(backslash=True, status_suffix='\\')
             return
@@ -2716,7 +2802,9 @@ class PyRadio(object):
                 self._show_no_more_playlist_history()
             return
         elif self._backslash_pressed and char in (curses.KEY_EXIT, 27) and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
+                (self.ws.operation_mode == self.ws.NORMAL_MODE or \
+                (self.ws.operation_mode == self.ws.PLAYLIST_MODE and \
+                self._cnf.open_register_list)):
             # ESC pressed - leave \ mode
             self._update_status_bar_right()
             return
@@ -2727,40 +2815,37 @@ class PyRadio(object):
             if self._cnf.can_go_back_in_time:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('opening first playlist')
-                if self._open_playlist_from_history(reset=True):
-                    self._normal_mode_resize()
+                self._open_playlist_from_history(reset=True)
             else:
                 self._show_no_more_playlist_history()
             return
         elif self._backslash_pressed and char == ord('c') and \
-                self._cnf.is_register and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
+                ((self._cnf.is_register and \
+                self.ws.operation_mode == self.ws.NORMAL_MODE) or \
+                (self.ws.operation_mode == self.ws.PLAYLIST_MODE and \
+                self._cnf.open_register_list)):
             # c pressed - clear register
-            logger.error('DE clear current register')
             self._update_status_bar_right()
-            if self.number_of_items :
+            if self.number_of_items > 0:
                 self._print_clear_register()
             else:
-                txt = '___Register is already empty!!!__'
-                self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
-                self._cnf._open_register_list = False
-                th = threading.Timer(.75, self.refreshBody)
-                th.start()
-                th.join()
+                self._show_notification_with_delay(
+                        txt='___Register is already empty!!!___',
+                        mode_to_set=self.ws.NORMAL_MODE,
+                        callback_function=self.refreshBody)
         elif self._backslash_pressed and char == ord('C') and \
-                self.ws.operation_mode == self.ws.NORMAL_MODE:
+                (self.ws.operation_mode == self.ws.NORMAL_MODE or \
+                (self.ws.operation_mode == self.ws.PLAYLIST_MODE and \
+                self._cnf.open_register_list)):
             # C pressed - clear all registers
-            logger.error('DE clear all registers')
             self._update_status_bar_right()
             if glob.glob(path.join(self._cnf.registers_dir, '*.csv')):
                 self._print_clear_all_registers()
             else:
-                txt = '____All registers are empty!!!___'
-                self._show_help(txt, self.ws.NORMAL_MODE, caption=' ', prompt=' ', is_message=True)
-                self._cnf._open_register_list = False
-                th = threading.Timer(.75, self.refreshBody)
-                th.start()
-                th.join()
+                self._show_notification_with_delay(
+                        txt='____All registers are empty!!!____',
+                        mode_to_set=self.ws.NORMAL_MODE,
+                        callback_function=self.refreshBody)
 
         #
         # End of Playlist history - char = \
@@ -2774,7 +2859,14 @@ class PyRadio(object):
         elif not self._register_assign_pressed and char == ord('y') and \
                 self.ws.operation_mode == self.ws.NORMAL_MODE:
             # y pressed
-            self._update_status_bar_right(reg_y_pressed=True, status_suffix='y')
+            if self.number_of_items == 0:
+                self._update_status_bar_right()
+                self._show_notification_with_delay(
+                        txt='___Nothing to put in register!!!___',
+                        mode_to_set=self.ws.NORMAL_MODE,
+                        callback_function=self.refreshBody)
+            else:
+                self._update_status_bar_right(reg_y_pressed=True, status_suffix='y')
             return
         elif (self._register_assign_pressed and char < 127 \
                 and (chr(char).isalpha() \
@@ -2790,9 +2882,12 @@ class PyRadio(object):
                 self._unnamed_register = self.stations[self.selection]
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('saving to unnamed register: {}'.format(self._unnamed_register))
+                self._show_notification_with_delay(
+                        txt='___Station copied to unnamed register!!!___',
+                        mode_to_set=self.ws.NORMAL_MODE,
+                        callback_function=self.refreshBody)
             elif char in (curses.KEY_EXIT, 27):
                 self._update_status_bar_right()
-                return
             else:
                 self._unnamed_register = self.stations[self.selection]
                 if logger.isEnabledFor(logging.DEBUG):
@@ -2800,6 +2895,11 @@ class PyRadio(object):
                 self._failed_register_file = self._cnf.append_to_register(ch, self._unnamed_register)
                 if self._failed_register_file:
                     self._print_register_save_error()
+                else:
+                    self._show_notification_with_delay(
+                            txt='___Station copied to register: {}___'.format(ch),
+                            mode_to_set=self.ws.NORMAL_MODE,
+                            callback_function=self.refreshBody)
             return
         #
         # End of Add to Register - char = y
@@ -2936,7 +3036,7 @@ class PyRadio(object):
 
                 elif ret >= 0:
                     msg = ( 'Error saving config. Press any key to exit...',
-                            'Config saved successfully!',
+                            'Config saved successfully!!!',
                             'Config saved - Restarting playback (encoding changed)')
                     self.ws.close_window()
                     self.bodyWin.box()
@@ -2964,7 +3064,6 @@ class PyRadio(object):
                                     sleep(1.5)
                                     self.playSelection()
                             else:
-
                                 self.log.write(msg=msg[1], thread_lock=None, help_msg=True, suffix=self._status_suffix)
                             self._old_config_encoding = self._cnf.opts['default_encoding'][1]
                             if self._config_win:
@@ -2972,6 +3071,12 @@ class PyRadio(object):
                             if self._cnf.player_changed:
                                 self._show_player_changed_in_config()
                                 self._cnf.player_changed = False
+                        elif ret == 1:
+                            # config not modified
+                            self._show_notification_with_delay(
+                                    txt='___Config not modified!!!___',
+                                    mode_to_set=self.ws.NORMAL_MODE,
+                                    callback_function=self.refreshBody)
                     else:
                         # restore transparency, if necessary
                         if self._config_win._config_options['use_transparency'][1] != self._config_win._saved_config_options['use_transparency'][1]:
@@ -3502,21 +3607,6 @@ class PyRadio(object):
                 self.refreshBody()
             return
 
-        #elif self.ws.operation_mode == self.ws.PLAYLIST_HELP_MODE or \
-        #        self.ws.operation_mode == self.ws.PLAYLIST_LOAD_ERROR_MODE or \
-        #            self.ws.operation_mode == self.ws.PLAYLIST_NOT_FOUND_ERROR_MODE:
-        #    """ close playlist help """
-        #    self.ws.operation_mode = self.ws.window_mode = self.ws.PLAYLIST_MODE
-        #    self.refreshBody()
-        #    if logger.isEnabledFor(logging.DEBUG):
-        #        if self.ws.operation_mode == self.ws.PLAYLIST_HELP_MODE:
-        #            logger.debug('MODE: self.ws.PLAYLIST_HELP_MODE -> self.ws.PLAYLIST_MODE')
-        #        elif self.ws.operation_mode == self.ws.PLAYLIST_LOAD_ERROR_MODE:
-        #            logger.debug('MODE: self.ws.PLAYLIST_LOAD_ERROR_MODE -> self.ws.PLAYLIST_MODE')
-        #        else:
-        #            logger.debug('MODE: self.ws.PLAYLIST_NOT_FOUND_ERROR_MODE -> self.ws.PLAYLIST_MODE')
-        #    return
-
         elif self.ws.operation_mode == self.ws.REMOVE_STATION_MODE:
             if char in (ord('y'), ord('Y')):
                 self._set_active_stations()
@@ -3530,6 +3620,12 @@ class PyRadio(object):
                 # auto save register file
                 if self._cnf.is_register:
                     self.saveCurrentPlaylist()
+                    if self.number_of_items == 0:
+                        try:
+                            remove(self._cnf.station_path)
+                        except:
+                            pass
+                self._unnamed_register = deleted_station
             else:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('Canceling: Remove station')
@@ -3559,18 +3655,24 @@ class PyRadio(object):
 
         elif self.ws.operation_mode in self.ws.PASSIVE_WINDOWS:
             if self.ws.operation_mode in (self.ws.MAIN_HELP_MODE,
-                        self.ws.MAIN_HELP_MODE_PAGE_2):
+                        self.ws.MAIN_HELP_MODE_PAGE_2,
+                        self.ws.MAIN_HELP_MODE_PAGE_3):
                 if char in ( ord('n'), ord('p'), ):
                     self.helpWinContainer = None
                     self.helpWin = None
-                    if self.ws.operation_mode == self.ws.MAIN_HELP_MODE:
-                        self.ws.close_window()
-                        #self.refreshBody()
-                        self._show_main_help_page_2()
+                    func = (self._show_main_help,
+                            self._show_main_help_page_2,
+                            self._show_main_help_page_3)
+                    if char == ord('n'):
+                        self._main_help_id += 1
+                        if self._main_help_id == len(func):
+                            self._main_help_id = 0
                     else:
-                        self.ws.close_window()
-                        #self.refreshBody()
-                        self._show_main_help()
+                        self._main_help_id -= 1
+                        if self._main_help_id < 0:
+                            self._main_help_id = len(func) - 1
+                    self.ws.close_window()
+                    func[self._main_help_id]()
                     return
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug('Part of PASSIVE_WINDOWS')
@@ -3578,6 +3680,7 @@ class PyRadio(object):
             self.helpWin = None
             self.ws.close_window()
             self.refreshBody()
+            self._main_help_id = 0
             return
 
         else:
@@ -3594,11 +3697,14 @@ class PyRadio(object):
                     self.refreshBody()
                 return
 
-            if char in (ord('G'), ):
+            if char in (ord('G'), ord('g') ):
                 self._random_requested = False
                 if self.number_of_items > 0:
                     if self.jumpnr == "":
-                        self.setStation(-1)
+                        if char == ord('G'):
+                            self.setStation(-1)
+                        else:
+                            self.setStation(0)
                     else:
                         force_center = False
                         jumpto=min(int(self.jumpnr)-1,len(self.stations)-1)
@@ -3655,8 +3761,7 @@ class PyRadio(object):
                     else:
                         """ go back to playlist history """
                         if self._cnf.is_register:
-                            if self._open_playlist_from_history():
-                                self._normal_mode_resize()
+                            self._open_playlist_from_history()
                             return
                         """ exit """
                         # stop updating the status bar
@@ -3727,6 +3832,30 @@ class PyRadio(object):
                     self._station_editor.show()
                     self._station_editor.item = [ '', '', '' ]
                     self.ws.operation_mode = self.ws.ADD_STATION_MODE
+
+                elif char == ord('p'):
+                    if self._unnamed_register:
+                        self._cnf.dirty_playlist = True
+                        if self.number_of_items == 0:
+                            self._cnf.stations = [ self._unnamed_register ]
+                            self.number_of_items = self._cnf.number_of_stations = 1
+                            self.selection = -1
+                            self.startPos = 0
+                        else:
+                            ret, self.number_of_items = self._cnf.insert_station(self._unnamed_register, self.selection + 1)
+                        self.stations = self._cnf.stations
+                        self.selection += 1
+                        if self.selection >= self.startPos + self.bodyMaxY:
+                            self.startPos += 1
+                        # auto save register files
+                        if self._cnf.is_register:
+                            self.saveCurrentPlaylist()
+                        self.refreshBody()
+                    else:
+                        self._show_notification_with_delay(
+                                txt='___Nothing to paste!!!___',
+                                mode_to_set=self.ws.NORMAL_MODE,
+                                callback_function=self.refreshBody)
 
                 elif char == ord('e'):
                     self._update_status_bar_right()
@@ -3805,9 +3934,16 @@ class PyRadio(object):
 
                 elif char in(ord('s'), ):
                     self._update_status_bar_right()
-                    if self._cnf.browsing_station_service: return
+                    if self._cnf.browsing_station_service or \
+                            self._cnf.is_register:
+                        return
                     if self._cnf.dirty_playlist:
                         self.saveCurrentPlaylist()
+                    else:
+                        self._show_notification_with_delay(
+                                txt='___Playlist not modified!!!___',
+                                mode_to_set=self.ws.NORMAL_MODE,
+                                callback_function=self.refreshBody)
                     return
 
                 elif char in (ord('r'), ):
@@ -3905,21 +4041,27 @@ class PyRadio(object):
                     """ read playlists from disk """
                     txt = '''Reading playlists. Please wait...'''
                     self._show_help(txt, self.ws.PLAYLIST_MODE, caption=' ', prompt=' ', is_message=True)
-                    old_playlist = self._cnf.playlists[self.selection][0]
-                    self.number_of_items, self.playing = self.readPlaylists()
-                    if self.number_of_items > 0:
-                        """ refresh reference """
-                        self.stations = self._cnf.playlists
-                        if self._cnf.open_register_list:
-                            oper_mode = self.ws.REGISTER_MODE
-                        else:
-                            oper_mode = self.ws.PLAYLIST_MODE
-                        if self.playing == -1:
-                            self.selections[oper_mode] = [0, 0, -1, self._cnf.playlists]
-                        else:
-                            self.selections[oper_mode] = (self.selection, self.startPos, self.playing, self._cnf.playlists)
-                        self.ss('r')
-                        self.refreshBody()
+                    self._reload_playlists()
+
+    def _reload_playlists(self):
+        old_playlist = self._cnf.playlists[self.selection][0]
+        self.number_of_items, self.playing = self.readPlaylists()
+        if self._cnf.open_register_list:
+            oper_mode = self.ws.REGISTER_MODE
+            """ refresh reference """
+            self.stations = self._cnf.playlists
+        else:
+            oper_mode = self.ws.PLAYLIST_MODE
+        if self.playing == -1 or self.number_of_items == 0:
+            self.selections[oper_mode] = [0, 0, -1, self._cnf.playlists]
+        else:
+            self.selections[oper_mode] = (self.selection, self.startPos, self.playing, self._cnf.playlists)
+        #self.ss('r')
+        if self.number_of_items > 0:
+            """ refresh reference """
+            self.stations = self._cnf.playlists
+        if self.number_of_items > 0 or self._cnf.open_register_list:
+            self.refreshBody()
 
     def _volume_up(self):
         if self.player.isPlaying():
@@ -3931,7 +4073,6 @@ class PyRadio(object):
                 self.refreshBody()
             if logger.isEnabledFor(logging.INFO):
                 logger.info('Volume adjustment inhibited because playback is off')
-
 
     def _volume_down(self):
         if self.player.isPlaying():

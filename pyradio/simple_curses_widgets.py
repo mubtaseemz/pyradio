@@ -330,8 +330,9 @@ class SimpleCursesLineEdit(object):
             self.log('displayed string: "{}"\n'.format(self._displayed_string))
 
         if self.focused:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug('refreshEditWindow:\n  first={0}, curs={1}, dcurs={2}, max={3}\n  len={4}, cjklen={5}\n  string="{6}"\n  len={7}, cjklen={8}\n  disstr="{9}"'.format(self._first, self._curs_pos, self._disp_curs_pos, self._max_chars_to_display, len(self.string), cjklen(self.string), self.string, len(self._displayed_string), cjklen(self._displayed_string), self._displayed_string))
+            # enable this to get info on function
+            #if logger.isEnabledFor(logging.DEBUG):
+            #    logger.debug('refreshEditWindow:\n  first={0}, curs={1}, dcurs={2}, max={3}\n  len={4}, cjklen={5}\n  string="{6}"\n  len={7}, cjklen={8}\n  disstr="{9}"'.format(self._first, self._curs_pos, self._disp_curs_pos, self._max_chars_to_display, len(self.string), cjklen(self.string), self.string, len(self._displayed_string), cjklen(self._displayed_string), self._displayed_string))
             self._edit_win.chgat(0, self._disp_curs_pos, 1, self.cursor_color)
 
         self._edit_win.refresh()
@@ -1094,4 +1095,212 @@ class SimpleCursesLineEditHistory(object):
 
     def reset_index(self):
         self._active_history_index = 0
+
+
+class PyRadioCheckBox(object):
+    """A very simple checkbox curses widget """
+    _win = None
+    _focused = False
+    _checked = False
+    _highlight_all = False
+    _caption = ''
+
+    _color_active = 0
+    _color_inactive = 0
+
+    def __init__(self,
+            Y, X, caption,
+            color_active, color_inactive,
+            char='✔', checked=False, focused=False,
+            highlight_all=False):
+        """Initialize the widget.
+
+        Parameters
+        ----------
+        Y, X
+            Y, X position of wizard in its parent (int)
+        caption
+            The caption of the wizard (string).
+        color_active
+            Active checkbox color (curses.color_pair)
+        color_inactive
+            Inactive checkbox color (curses.color_pair)
+        char
+            The character to indicate a checked checkbox (string)
+        checked
+            Index of checked checkbox (int)
+        focused
+            True if wizard has focus (boolean)
+        highlight_all
+            Focused behaviour (boolean).
+            If True, the whole window uses the active color.
+            If False, only char uses the active color.
+        """
+
+        self.Y = Y
+        self.X = X
+        self._caption = caption
+        self._char = char
+        self._checked = checked
+        self._focused = focused
+        self._highlight_all = highlight_all
+        self._color_active = color_active
+        self._color_inactive = color_inactive
+
+        self.resize()
+
+    @property
+    def caption(self):
+        """The text of the checkbox"""
+        return self._caption
+
+    @caption.setter
+    def caption(self, value):
+        self._caption = value
+        self.resize()
+        self.show()
+
+    @property
+    def char(self):
+        """Character to indicate a checked checkbox
+           Default: ✔
+        """
+
+        return self._char
+
+    @char.setter
+    def char(self, value):
+        self._char = value
+        self.refresh()
+
+    @property
+    def color_active(self):
+        """The color to use when has focus"""
+        return self._color_active
+
+    @color_active.setter
+    def color_active(self, value):
+        self._color_active = value
+        self.refresh()
+
+    @property
+    def color_inactive(self):
+        """The color to use when does not have focus"""
+        return self._color_inactive
+
+    @color_inactive.setter
+    def color_inactive(self, value):
+        self._color_inactive = value
+        self.refresh()
+
+    @property
+    def checked(self):
+        """Returns if the checkbox is ckecked"""
+
+        return self._checked
+
+    @checked.setter
+    def checked(self, value):
+        self._checked = value
+        self.refresh()
+
+    @property
+    def focused(self):
+        """Returns if the checkbox has focus"""
+        return self._focused
+
+    @focused.setter
+    def focused(self, value):
+        self._focused = value
+        self.refresh()
+
+    @property
+    def highlight_all(self):
+        """Returns if the whole window will use the
+        active color when focused"""
+        return self._highlight_all
+
+    @highlight_all.setter
+    def highlight_all(self, value):
+        self._highlight_all = value
+        self.refresh()
+
+    def mvwin(self, Y, X):
+        if self._win:
+            self._win.mvwin(Y, X)
+            self.refresh()
+
+    def resize(self):
+        """Resize the widget
+           For changes to be displayed,
+           use show afterwards"""
+        # use cjklen for cjk support
+        if self._win:
+            del self._win
+        self._width = None
+        self._width = len(self._caption) + 4
+        self._win = curses.newwin(1, self._width, self.Y, self.X)
+
+    def resize_and_show(self):
+        """Resize and show the widget"""
+        self.resize()
+        self.show()
+
+    def show(self):
+        """Put the widget on the screen"""
+        if self._win:
+            self._win.bkgdset(' ', self._color_inactive)
+            self._win.erase()
+            self._win.touchwin()
+            self._win.refresh()
+            self.refresh()
+
+    def refresh(self):
+        """Refresh the widget's content"""
+        if self._win:
+            char = self._char if self._checked else ' '
+            if self._focused:
+                if self._highlight_all:
+                    try:
+                        self._win.addstr(0, 0,
+                                '[' + char + '] ' + self._caption,
+                                self._color_active)
+                    except curses.error:
+                        pass
+                else:
+                    try:
+                        self._win.addstr(0, 0, '[', self._color_inactive)
+                        self._win.addstr(char, self._color_active)
+                        self._win.addstr('] ' + self._caption, self._color_inactive)
+                    except curses.error:
+                        pass
+            else:
+                try:
+                    self._win.addstr(0, 0,
+                            '[' + char + '] ' + self._caption,
+                            self._color_inactive)
+                except curses.error:
+                    pass
+            self._win.touchwin()
+            self._win.refresh()
+
+    def toggle_checked(self):
+        self._checked = not self._checked
+        self.refresh()
+
+    def toggle_focus(self):
+        self._focused = not self._focused
+        self.refresh()
+
+    def getmaxYX(self):
+        if self._win:
+            return self._win.getmaxYX()
+        else:
+            return (-1, -1)
+
+    def _get_metrics(self):
+        """ Calculate width and height based on caption """
+        self._height = 1
+        adj = 4
+        self._width = len(self._title) + 4
 
