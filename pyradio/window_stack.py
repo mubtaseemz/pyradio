@@ -48,7 +48,10 @@ class Window_Stack_Constants(object):
     EDIT_THEME_HELP_MODE = 111
     ASK_TO_CREATE_NEW_THEME_MODE = 112
     SEARCH_HELP_MODE = 113
-    LINE_EDITOR_HELP = 114
+    LINE_EDITOR_HELP_MODE = 114
+    REGISTER_HELP_MODE = 115
+    EXTRA_COMMANDS_HELP_MODE = 116
+    YANK_HELP_MODE = 117
     # TODO: return values from opening theme
     PLAYLIST_RECOVERY_ERROR_MODE = 200
     PLAYLIST_NOT_FOUND_ERROR_MODE = 201
@@ -132,7 +135,7 @@ class Window_Stack_Constants(object):
             NOT_IMPLEMENTED_YET_MODE: 'NOT_IMPLEMENTED_YET_MODE',
             ADD_STATION_MODE: 'ADD_STATION_MODE',
             EDIT_STATION_MODE: 'EDIT_STATION_MODE',
-            LINE_EDITOR_HELP: 'LINE_EDITOR_HELP',
+            LINE_EDITOR_HELP_MODE: 'LINE_EDITOR_HELP_MODE',
             EDIT_STATION_NAME_ERROR: 'EDIT_STATION_NAME_ERROR',
             EDIT_STATION_URL_ERROR: 'EDIT_STATION_URL_ERROR',
             PY2_EDITOR_ERROR: 'PY2_EDITOR_ERROR',
@@ -144,6 +147,9 @@ class Window_Stack_Constants(object):
             REGISTER_SAVE_ERROR_MODE: 'REGISTER_SAVE_ERROR_MODE',
             CLEAR_REGISTER_MODE: 'CLEAR_REGISTER_MODE',
             CLEAR_ALL_REGISTERS_MODE: 'CLEAR_ALL_REGISTERS_MODE',
+            REGISTER_HELP_MODE: 'REGISTER_HELP_MODE',
+            EXTRA_COMMANDS_HELP_MODE: 'EXTRA_COMMANDS_HELP_MODE',
+            YANK_HELP_MODE: 'YANK_HELP_MODE',
             }
 
     ''' When PASSIVE_WINDOWS target is one of them,
@@ -176,7 +182,7 @@ class Window_Stack_Constants(object):
             SELECT_ENCODING_HELP_MODE,
             THEME_HELP_MODE,
             SEARCH_HELP_MODE,
-            LINE_EDITOR_HELP,
+            LINE_EDITOR_HELP_MODE,
             EDIT_STATION_NAME_ERROR,
             EDIT_STATION_URL_ERROR,
             PY2_EDITOR_ERROR,
@@ -185,6 +191,9 @@ class Window_Stack_Constants(object):
             SERVICE_CONNECTION_ERROR,
             PLAYER_CHANGED_INFO_MODE,
             REGISTER_SAVE_ERROR_MODE,
+            REGISTER_HELP_MODE,
+            EXTRA_COMMANDS_HELP_MODE,
+            YANK_HELP_MODE,
             )
 
     def __init__(self):
@@ -208,6 +217,8 @@ class Window_Stack(Window_Stack_Constants):
     @operation_mode.setter
     def operation_mode(self, a_mode):
         if a_mode in self.MAIN_MODES:
+            # also setting operation_mode in
+            # window_mode property setter
             self.window_mode = a_mode
         else:
             tmp = [ a_mode, self._dq[-1][1] ]
