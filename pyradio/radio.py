@@ -31,7 +31,7 @@ from .config_window import *
 from .log import Log
 from .edit import PyRadioSearch, PyRadioEditor
 from .themes import *
-from .simple_curses_widgets import cjklen
+from .cjkwrap import cjklen
 from . import player
 import logging
 
@@ -241,6 +241,8 @@ class PyRadio(object):
                 self.ws.REGISTER_HELP_MODE: self._show_register_help,
                 self.ws.EXTRA_COMMANDS_HELP_MODE: self._show_extra_commands_help,
                 self.ws.YANK_HELP_MODE: self._show_yank_help,
+                self.ws.STATION_INFO_ERROR_MODE: self._print_station_info_error,
+                self.ws.STATION_INFO_MODE: self._show_station_info,
                 }
 
         """ list of help functions """
@@ -1309,6 +1311,7 @@ class PyRadio(object):
                  H M L            |Go to top / middle / bottom of screen.
                  P                |Go to |P|laying station.
                  Enter|,|Right|,|l    |Play selected station.
+                 i                |Display station |i|nfo (when playing).
                  r                |Select and play a random station.
                  Space|,|Left|,|h     |Stop / start playing selected station.
                  Esc|,|q            |Quit.
@@ -1582,7 +1585,8 @@ class PyRadio(object):
                 is_message=True)
 
     def _print_not_implemented_yet(self):
-        txt = '''This feature has not been implemented yet...
+        txt = '''
+            This feature has not been implemented yet...
         '''
         self._show_help(txt, self.ws.NOT_IMPLEMENTED_YET_MODE,
                 caption = ' PyRadio ',
@@ -1745,6 +1749,19 @@ class PyRadio(object):
                 caption= ' Error ',
                 prompt = ' Press any key to hide ',
                 is_message = True)
+
+    def _print_station_info_error(self):
+        txt = '''Station info not available at this time,
+        since it comes from the data provided by
+        the station when connecting to it.
+
+        Please play a station to get its info.
+        '''
+        self._show_help(txt, self.ws.STATION_INFO_ERROR_MODE,
+                caption = ' Station Info Error ',
+                prompt = ' Press any key ',
+                is_message=True)
+
 
     def _print_unknown_browser_service(self):
         txt = '''The service you are trying to use is not supported.
@@ -2413,6 +2430,9 @@ class PyRadio(object):
         else:
             self._config_win.parent = self.outerBodyWin
             self._config_win.refresh_config_win()
+
+    def _show_station_info(self):
+        pass
 
     def detectUpdateThread(self, a_path, a_lock, stop):
         """ a thread to check if an update is available """
@@ -3938,6 +3958,14 @@ class PyRadio(object):
 
                 elif char == ord('p'):
                     self._paste()
+
+                elif char == ord('i'):
+                    self._update_status_bar_right()
+                    self._print_not_implemented_yet()
+                    #if self.player.icy_data_available():
+                    #    self._show_station_info()
+                    #else:
+                    #    self._print_station_info_error()
 
                 elif char == ord('e'):
                     self._update_status_bar_right()

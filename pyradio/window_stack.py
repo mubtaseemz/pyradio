@@ -33,7 +33,8 @@ class Window_Stack_Constants(object):
     ADD_STATION_MODE = 54
     EDIT_STATION_MODE = 55
     CLEAR_REGISTER_MODE = 56
-    CLEAR_ALL_REGISTERS_MODE =57
+    CLEAR_ALL_REGISTERS_MODE = 57
+    STATION_INFO_MODE = 58
     MAIN_HELP_MODE = 100
     MAIN_HELP_MODE_PAGE_2 = 101
     MAIN_HELP_MODE_PAGE_3 = 102
@@ -74,6 +75,7 @@ class Window_Stack_Constants(object):
     EDIT_STATION_URL_ERROR = 305
     PY2_EDITOR_ERROR = 306
     REGISTER_SAVE_ERROR_MODE = 307
+    STATION_INFO_ERROR_MODE = 308
     THEME_MODE = 400
     HISTORY_EMPTY_NOTIFICATION = 500
     UPDATE_NOTIFICATION_MODE = 1000
@@ -150,6 +152,8 @@ class Window_Stack_Constants(object):
             REGISTER_HELP_MODE: 'REGISTER_HELP_MODE',
             EXTRA_COMMANDS_HELP_MODE: 'EXTRA_COMMANDS_HELP_MODE',
             YANK_HELP_MODE: 'YANK_HELP_MODE',
+            STATION_INFO_MODE: 'STATION_INFO_MODE',
+            STATION_INFO_ERROR_MODE: 'STATION_INFO_ERROR_MODE',
             }
 
     ''' When PASSIVE_WINDOWS target is one of them,
@@ -194,6 +198,7 @@ class Window_Stack_Constants(object):
             REGISTER_HELP_MODE,
             EXTRA_COMMANDS_HELP_MODE,
             YANK_HELP_MODE,
+            STATION_INFO_ERROR_MODE,
             )
 
     def __init__(self):

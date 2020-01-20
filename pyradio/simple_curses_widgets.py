@@ -3,7 +3,7 @@ import curses
 import curses.ascii
 import logging
 from sys import version_info, platform, version
-from .widechar import PY3, is_wide, cjklen
+from .cjkwrap import PY3, is_wide, cjklen
 import locale
 locale.setlocale(locale.LC_ALL, '')    # set your locale
 
