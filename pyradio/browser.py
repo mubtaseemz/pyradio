@@ -7,7 +7,7 @@ except ImportError:
     pass
 import threading
 import logging
-from .widechar import cjklen, PY3
+from .cjkwrap import cjklen, PY3
 #from os import get_terminal_size
 
 import locale
