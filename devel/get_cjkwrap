@@ -11,5 +11,6 @@ git clone https://gitlab.com/fgallaire/cjkwrap && {
     pwd
     git add pyradio/cjkwrap.py
     cd ..
+    git st
 }
 

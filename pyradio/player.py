@@ -7,8 +7,16 @@ from os.path import expanduser
 from sys import platform, version_info
 from sys import exit
 from time import sleep
+import collections
 import json
 import socket
+
+try:
+    from urllib import unquote
+except ImportError:
+    from urllib.parse import unquote
+from .cjkwrap import wrap
+from .encodings import get_encodings
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +62,7 @@ class Player(object):
     # used to stop mpv update thread on python3
     stop_mpv_status_update_thread = False
 
-    # bitrate, url, audio_data etc.
+    # bitrate, url, audio_format etc.
     _icy_data = {}
 
     GET_TITLE = b'{ "command": ["get_property", "metadata"], "request_id": 100 }\n'
@@ -77,6 +85,14 @@ class Player(object):
     def save_volume(self):
         pass
 
+    def icy_data(self, a_member):
+        ret = ''
+        with self.status_update_lock:
+            if self._icy_data:
+                if a_member in self._icy_data:
+                    ret = self._icy_data[a_member]
+        return ret
+
     def icy_data_available(self):
         with self.status_update_lock:
             l = len(self._icy_data)
@@ -84,6 +100,95 @@ class Player(object):
             return False
         return True
 
+    def get_info_string(self, a_station, max_width=60):
+        guide = (
+            ('Reported Name',  'icy-name'),
+            ('Website', 'icy-url'),
+            ('Genre', 'icy-genre'),
+            ('Bitrate', 'icy-br'),
+            ('Audio', 'audio_format'),
+            ('Codec Name', 'codec_name'),
+            ('Codec', 'codec')
+        )
+
+        enc = get_encodings()
+        if self._station_encoding == '':
+            this_enc = 'utf-8'
+            this_enc_string = 'All languages'
+        else:
+            this_enc = self._station_encoding
+            try:
+                this_enc_string = [x for x in enc if x[0] == this_enc][0][2]
+            except:
+                this_enc_string = 'Unknown'
+        enc_to_show = '{0} ({1})'.format(this_enc, this_enc_string)
+
+
+        info = collections.OrderedDict()
+        info['Playlist Name'] = a_station[0]
+        for x in guide:
+            if x[1] in self._icy_data.keys():
+                info[x[0]] = self._icy_data[x[1]]
+            else:
+                info[x[0]] = ''
+            if x[0] == 'Bitrate':
+                info[x[0]] += ' kb/s'
+            if x[0] == 'Genre':
+                info['Encoding'] = enc_to_show
+            if x[0].startswith('Reported'):
+                info['Station URL'] = a_station[1]
+
+        max_len = 0
+        for a_title in info.keys():
+            if len(a_title) > max_len:
+                max_len = len(a_title)
+            info[a_title] = info[a_title].replace('_','¸')
+        info['Website'] = unquote(info['Website'])
+        #logger.error('DE info\n{}\n\n'.format(info))
+
+        a_list = []
+        for n in info.keys():
+            a_list.extend(wrap(n.rjust(max_len, ' ') + ': |' + info[n],
+                                 width=max_width,
+                                 subsequent_indent=(2+max_len)*'_'))
+
+        # make suer URL is not on a new line
+        for n, an_item in enumerate(a_list):
+            if an_item.endswith('URL:'):
+                url = a_list[n+1].split('_|')[1]
+                # merge items
+                a_list[n] = a_list[n] + ' ' + url
+                a_list.pop(n+1)
+                break
+
+        #logger.error('DE a_list\n\n{}\n\n'.format(a_list))
+
+        a_list[0] = a_list[0].replace('|', '')
+        fix_highlight = (
+                ('Reported ', 'Station URL:'),
+                ('Website:', 'Genre:'),
+                ('Genre:', 'Encoding:')
+                )
+        for x in fix_highlight:
+            for n, an_item in enumerate(a_list):
+                if x[0] in an_item:
+                    rep_name = n
+                if x[1] in an_item:
+                    web_name = n
+                    break
+            for n in range(rep_name + 1, web_name):
+                a_list[n] = '|' + a_list[n]
+
+
+        ret = '|' + '\n'.join(a_list).replace('Encoding: |', 'Encoding: ').replace('URL: |', 'URL: ').replace('\n', '\n|')
+        tail = ''
+        if 'icy-name' in self._icy_data.keys():
+            if a_station[0] != self._icy_data['icy-name'] and \
+                    self._icy_data['icy-name'] and \
+                    self._icy_data['icy-name'] != '(null)':
+                tail = '\n\nPress |r| to rename station to |Reported Name|, or\npress any other key to hide.'
+        #logger.error('DE ret\n{}\n'.format(ret))
+        return ret + '\n\n|Highlighted values| are user specified.\nOther values are station provided (live) data.', tail
 
     def _do_save_volume(self, config_string):
         if not self.config_files:
@@ -234,6 +339,14 @@ class Player(object):
                     subsystemOut = subsystemOutRaw.decode("utf-8", "replace")
                 if subsystemOut == '':
                     break
+                #logger.info('DE \nsubsystemOut\n\n{}\n\n'.format(subsystemOut))
+                #if '| Codec: ' in subsystemOut:
+                #    # vlc info to get codec
+                #    vlc_codec = subsystemOut.replace('| Codec: ', '')
+                #    with lock:
+                #        self._icy_data['codec'] = vlc_codec.split(' (')[0]
+                #        self._icy_data['codec_name'] = vlc_codec.split(' (')[1][-1]
+                #    continue
                 if not self._is_accepted_input(subsystemOut):
                     continue
                 subsystemOut = subsystemOut.strip()
@@ -268,7 +381,7 @@ class Player(object):
                         except:
                             pass
                         if (logger.isEnabledFor(logging.INFO)):
-                            logger.info('start of playback detected')
+                            logger.info('*** Start of playback detected ***')
                         #if self.outputStream.last_written_string.startswith('Connecting to'):
                         if self.oldUserInput['Title'] == '':
                             new_input = self.outputStream.last_written_string.replace('Connecting to', 'Playing').split(' ... ')[0]
@@ -281,13 +394,12 @@ class Player(object):
                             new_input = self.oldUserInput['Title']
                         self.outputStream.write(msg=new_input, thread_lock=lock)
                         self.playback_is_on = True
-                        # TODO thread it
                         if 'AO: [' in subsystemOut:
                             with lock:
                                 if version_info > (3, 0):
-                                    self._icy_data['audio_data'] = subsystemOut.split('] ')[1].split(' (')[0]
+                                    self._icy_data['audio_format'] = subsystemOut.split('] ')[1].split(' (')[0]
                                 else:
-                                    self._icy_data['audio_data'] = subsystemOut.split('] ')[1].split(' (')[0].encode('utf-8')
+                                    self._icy_data['audio_format'] = subsystemOut.split('] ')[1].split(' (')[0].encode('utf-8')
                         if self.PLAYER_CMD == 'mpv' and version_info < (3, 0):
                             for a_cmd in (
                                     b'{ "command": ["get_property", "metadata"], "request_id": 100 }\n',
@@ -299,7 +411,7 @@ class Player(object):
                                 else:
                                     if logger.isEnabledFor(logging.INFO):
                                         logger.info('no response!!!')
-                        logger.error('DE 3 {}'.format(self._icy_data))
+                        #logger.error('DE 3 {}'.format(self._icy_data))
                     elif self._is_icy_entry(subsystemOut):
                         #logger.error("***** icy_entry")
                         title = self._format_title_string(subsystemOut)
@@ -350,9 +462,7 @@ class Player(object):
                                                 self._icy_data[an_item] = ''
                                         if 'codec-name' in self._icy_data.keys():
                                             self._icy_data['codec-name'] = self._icy_data['codec-name'].replace('"', '')
-                                logger.error('DE audio data\n\n{}\n\n'.format(self._icy_data))
-                                #self._sendCommand('info\n')
-
+                                #logger.error('DE audio data\n\n{}\n\n'.format(self._icy_data))
         except:
             has_error = True
             if logger.isEnabledFor(logging.ERROR):
@@ -388,7 +498,7 @@ class Player(object):
             sock.sendall(message)
             go_on = True
         except:
-            logger.error('DE \n\nBroken pipe\n\n')
+            #logger.error('DE \n\nBroken pipe\n\n')
             go_on = False
 
         if go_on:
@@ -409,7 +519,9 @@ class Player(object):
                     if a_data:
                         all_data = a_data.split(b'\n')
                         for n in all_data:
-                            if not self._get_mpv_metadata(n, lock, stop):
+                            if self._get_mpv_metadata(n, lock, stop):
+                                self._request_mpv_info_data(sock, lock)
+                            else:
                                 try:
                                     if stop():
                                         break
@@ -420,27 +532,16 @@ class Player(object):
                                                 sock.sendall(self.GET_TITLE)
                                             except:
                                                 break
-                                        elif d['event'] == 'playback-restart':
-                                            self.stop_timeout_counter_thread = True
-                                            try:
-                                                self.connection_timeout_thread.join()
-                                            except:
-                                                pass
-                                            if (logger.isEnabledFor(logging.INFO)):
-                                                logger.info('start of playback detected')
-                                            if self.outputStream.last_written_string.startswith('Connecting '):
-                                                new_input = self.outputStream.last_written_string.replace('Connecting to', 'Playing').split(' ... ')[0]
-                                                self.outputStream.write(msg=new_input, thread_lock=lock)
-                                                if self.oldUserInput['Title'] == '':
-                                                    self.oldUserInput['Input'] = new_input
-                                                else:
-                                                    self.oldUserInput['Title'] = new_input
-                                            self.playback_is_on = True
-                                            if stop():
+                                            ret = self._set_mpv_playback_is_on(lock, stop)
+                                            if not ret:
                                                 break
-                                            sock.sendall(self.GET_AUDIO_FORMAT)
-                                            sock.sendall(self.GET_AUDIO_CODEC)
-                                            sock.sendall(self.GET_AUDIO_CODEC_NAME)
+                                            self._request_mpv_info_data(sock, lock)
+                                        elif d['event'] == 'playback-restart':
+                                            if not self.playback_is_on:
+                                                ret = self._set_mpv_playback_is_on(lock, stop)
+                                            if not ret:
+                                                break
+                                            self._request_mpv_info_data(sock, lock)
                                 except:
                                     pass
                 finally:
@@ -448,6 +549,15 @@ class Player(object):
         sock.close()
         if (logger.isEnabledFor(logging.INFO)):
             logger.info("MPV updateStatus thread stopped.")
+
+    def _request_mpv_info_data(self, sock, lock):
+        with lock:
+            ret = len(self._icy_data)
+        if ret == 0:
+            sock.sendall(self.GET_TITLE)
+            sock.sendall(self.GET_AUDIO_FORMAT)
+            sock.sendall(self.GET_AUDIO_CODEC)
+            sock.sendall(self.GET_AUDIO_CODEC_NAME)
 
     def _get_mpv_metadata(self, *args):
         """Get MPV metadata
@@ -475,12 +585,12 @@ class Player(object):
         =========
         self._icy_data
             Fields:
-                icy-title  : Title of song (python 3 only)
-                icy-name   : Station name
-                icy-url    : Station URL
-                icy-genre  : Station genres
-                icy-br     : Station bitrate
-                audio_data : XXXXHx stereo/mono 1/2ch format
+                icy-title    : Title of song (python 3 only)
+                icy-name     : Station name
+                icy-url      : Station URL
+                icy-genre    : Station genres
+                icy-br       : Station bitrate
+                audio_format : XXXXHx stereo/mono 1/2ch format
         """
 
         a_data = args[0]
@@ -488,7 +598,6 @@ class Player(object):
         stop = args[2]
 
         if b'"icy-title":"' in a_data:
-            logger.error('DE I ama here')
             if version_info > (3, 0):
                 title = a_data.split(b'"icy-title":"')[1].split(b'"}')[0]
                 if title:
@@ -500,6 +609,8 @@ class Player(object):
                     if stop():
                         return False
                     self.outputStream.write(msg=string_to_show, thread_lock=lock)
+                    if not self.playback_is_on:
+                        return self._set_mpv_playback_is_on(lock, stop)
                 else:
                     if (logger.isEnabledFor(logging.INFO)):
                         logger.info('Icy-Title is NOT valid')
@@ -510,10 +621,10 @@ class Player(object):
                     self.outputStream.write(msg=string_to_show, thread_lock=lock)
                     self.oldUserInput['Title'] = title
 
+        #logger.info('DE a_data {}'.format(a_data))
         if b'icy-br' in a_data:
-            logger.info('DE check {}'.format(self._icy_data))
+            #logger.info('DE check {}'.format(self._icy_data))
             if not 'icy-br' in self._icy_data.keys():
-                logger.error('DE I ama here again')
                 for icy in ('icy-name', 'icy-url', 'icy-genre', 'icy-br'):
                     if stop():
                         return False
@@ -533,7 +644,7 @@ class Player(object):
                                     self._icy_data[icy] = a_data.split(bytes_icy + b'":"')[1].split(b'",')[0].split(b'"}')[0].decode(self._station_encoding)
                                 except UnicodeDecodeError as e:
                                     pass
-                    logger.error('DE 0 {}'.format(self._icy_data))
+                    #logger.error('DE 0 {}'.format(self._icy_data))
             return True
 
         elif b'request_id' in a_data and b'"error":"success"' in a_data:
@@ -557,11 +668,30 @@ class Player(object):
                         self._icy_data['codec_name'] = a_data.split(b'"data":"')[1].split(b'",')[0].encode('utf-8')
                     else:
                         self._icy_data['codec_name'] = a_data.split(b'"data":"')[1].split(b'",')[0].decode('utf-8')
-            logger.error('DE 1 {}'.format(self._icy_data))
+            #logger.error('DE 1 {}'.format(self._icy_data))
             return True
         else:
             return False
 
+    def _set_mpv_playback_is_on(self, lock, stop):
+        self.stop_timeout_counter_thread = True
+        try:
+            self.connection_timeout_thread.join()
+        except:
+            pass
+        if (logger.isEnabledFor(logging.INFO)):
+            logger.info('*** Start of playback detected ***')
+        if self.outputStream.last_written_string.startswith('Connecting '):
+            new_input = self.outputStream.last_written_string.replace('Connecting to', 'Playing').split(' ... ')[0]
+            self.outputStream.write(msg=new_input, thread_lock=lock)
+            if self.oldUserInput['Title'] == '':
+                self.oldUserInput['Input'] = new_input
+            else:
+                self.oldUserInput['Title'] = new_input
+        self.playback_is_on = True
+        if stop():
+            return False
+        return True
 
     def threadUpdateTitle(self, a_lock, delay=1):
         if self.oldUserInput['Title'] != '':
@@ -1011,7 +1141,7 @@ class MpvPlayer(Player):
                 data = sock.recvmsg(4096)
         except sock.error as e:
             data = ''
-        logger.error('DE data = {}'.format(data))
+        #logger.error('DE data = {}'.format(data))
             #sock.colse()
             #return False
         #logger.error('DE data = "{}"'.format(data))
@@ -1239,7 +1369,7 @@ class VlcPlayer(Player):
             'Icy-Genre: ': 'icy-genre',
             'icy-url: ': 'icy-url',
             'icy-br: ': 'icy-br',
-            'format: ': 'audio_data',
+            'format: ': 'audio_format',
             'using audio decoder module ': 'codec-name',
             }
 
