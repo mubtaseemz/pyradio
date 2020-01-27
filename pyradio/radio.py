@@ -3341,7 +3341,7 @@ class PyRadio(object):
                         if self.selection >= self.startPos + self.bodyMaxY:
                             self.startPos += 1
 
-                    self.selections[3] = self.stations
+                    self.selections[0][3] = self.stations
                     # auto save register files
                     if self._cnf.is_register:
                         self.saveCurrentPlaylist()
