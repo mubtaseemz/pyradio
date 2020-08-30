@@ -17,7 +17,7 @@ if exist C:\mplayer (
     set "MPLAYER=C:\mplayer"
     set "MPLAYER_SYSTEM=yes"
 )
-if exist "%USERPROFILE%\mplayer\mplayer.exe" set "MPLAYER="\mplayer"
+if exist "%USERPROFILE%\mplayer\mplayer.exe" set "MPLAYER=%USERPROFILE%\mplayer"
 if exist "%APPDATA%\pyradio\mplayer\mplayer.exe" set "MPLAYER=%APPDATA%\pyradio\mplayer"
 
 
