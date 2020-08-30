@@ -17,8 +17,8 @@ if exist C:\mplayer (
     set "MPLAYER=C:\mplayer"
     set "MPLAYER_SYSTEM=yes"
 )
-if exist %USERPROFILE%\mplayer\mplayer.exe set "MPLAYER=%USERPROFILE%\mplayer"
-if exist %APPDATA%\pyradio\mplayer\mplayer.exe set "MPLAYER=%APPDATA%\pyradio\mplayer"
+if exist "%USERPROFILE%\mplayer\mplayer.exe" set "MPLAYER="\mplayer"
+if exist "%APPDATA%\pyradio\mplayer\mplayer.exe" set "MPLAYER=%APPDATA%\pyradio\mplayer"
 
 
 set "MPLAYER_IN_PATH="
@@ -44,11 +44,11 @@ goto :endofscript
 
 :installhtml
 echo.
-if not exist "%APPDATA%\pyradio\*" mkdir %APPDATA%\pyradio
-if not exist "%APPDATA%\pyradio\help\*" mkdir %APPDATA%\pyradio\help
-copy /Y *.html %APPDATA%\pyradio\help >NUL
-copy /Y devel\pyradio.* %APPDATA%\pyradio\help >NUL
-copy /Y devel\*.lnk %APPDATA%\pyradio\help >NUL
+if not exist "%APPDATA%\pyradio\*" mkdir "%APPDATA%\pyradio"
+if not exist "%APPDATA%\pyradio\help\*" mkdir "%APPDATA%\pyradio\help"
+copy /Y *.html "%APPDATA%\pyradio\help" >NUL
+copy /Y devel\pyradio.* "%APPDATA%\pyradio\help" >NUL
+copy /Y devel\*.lnk "%APPDATA%\pyradio\help" >NUL
 echo *** HTML files copyed to "%APPDATA%\pyradio\help"
 
 if [%MPLAYER%]==[] (
@@ -56,7 +56,7 @@ if [%MPLAYER%]==[] (
     echo "mplayer" has not been found on your system.
     echo.
     echo Please refer to the guide in
-    echo     %APPDATA%\pyradio\help\windows.html
+    echo     "%APPDATA%\pyradio\help\windows.html"
     echo to install it.
     echo.
     echo You can execute "pyradio -ocd" and navigate to
@@ -104,7 +104,7 @@ goto :toend
 
 :linkcopy
 echo *** Installing Dekstop Shortcut
-copy %APPDATA%\pyradio\help\*.lnk %DESKTOP% >NUL
+copy "%APPDATA%\pyradio\help\*.lnk" %DESKTOP% >NUL
 goto :toend
 
 
